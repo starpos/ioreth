@@ -1,0 +1,7 @@
+iores
+A simple benchmark to measure IO response time with random access.
+
+
+Usage
+> make
+> ./iores -h
