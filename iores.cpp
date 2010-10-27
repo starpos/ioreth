@@ -54,7 +54,7 @@ public:
         ::printf("device %s size %zu isWrite %d isDirect %d\n",
                  name_.c_str(), size_, isWrite_, isDirect_);
         
-        int flags = (isWrite_ ? O_RDWR : O_RDONLY);
+        int flags = (isWrite_ ? O_WRONLY : O_RDONLY);
         if (isDirect_) { flags |= O_DIRECT; }
 
         fd_ = ::open(name_.c_str(), flags);
