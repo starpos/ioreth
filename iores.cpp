@@ -10,6 +10,7 @@
 #include <string>
 #include <sstream>
 #include <queue>
+#include <utility>
 
 #include <stdio.h>
 #include <errno.h>
@@ -21,6 +22,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
+/* (isWrite, resonse time) */
+typedef std::pair<bool, double> Res;
 
 static inline double getTime()
 {
@@ -34,27 +38,37 @@ static inline double getTime()
     return t;
 }
 
+enum Mode
+{
+    READ, WRITE, MIX
+};
+
 class BlockDevice
 {
 private:
     std::string name_;
     const size_t size_;
-    const bool isWrite_;
+    const Mode mode_;
     const bool isDirect_;
     int fd_;
 
 public:
-    BlockDevice(const std::string& name, size_t size, bool isWrite, bool isDirect)
+    BlockDevice(const std::string& name, size_t size, const Mode mode, bool isDirect)
         : name_(name)
         , size_(size)
-        , isWrite_(isWrite)
+        , mode_(mode)
         , isDirect_(isDirect)
         , fd_(-1) {
 
-        ::printf("device %s size %zu isWrite %d isDirect %d\n",
-                 name_.c_str(), size_, isWrite_, isDirect_);
-        
-        int flags = (isWrite_ ? O_WRONLY : O_RDONLY);
+        ::printf("device %s size %zu mode %d isDirect %d\n",
+                 name_.c_str(), size_, mode_, isDirect_);
+
+        int flags;
+        switch (mode_) {
+        case READ:  flags = O_RDONLY; break;
+        case WRITE: flags = O_WRONLY; break;
+        case MIX:   flags = O_RDWR;   break;
+        }
         if (isDirect_) { flags |= O_DIRECT; }
 
         fd_ = ::open(name_.c_str(), flags);
@@ -89,7 +103,7 @@ public:
     void write(off_t oft, size_t size, char* buf) {
 
         if (size_ < oft + size) { throw std::string("range error."); }
-        if (! isWrite_) { throw std::string("write is not permitted."); }
+        if (mode_ == READ) { throw std::string("write is not permitted."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
@@ -102,7 +116,7 @@ public:
             s += ret;
         }
     }
-    bool isWrite() const { return isWrite_; }
+    Mode getMode() const { return mode_; }
 };
 
 class IoResponseBench
@@ -113,7 +127,7 @@ private:
     size_t nBlocks_;
     void* bufV_;
     char* buf_;
-    std::queue<double>& rtQ_;
+    std::queue<Res>& rtQ_;
     bool isShowEachResponse_;
 
 public:
@@ -123,7 +137,7 @@ public:
      * @param nBlocks disk size as number of blocks.
      */
     IoResponseBench(BlockDevice& dev, size_t blockSize,
-                    size_t nBlocks, std::queue<double>& rtQ,
+                    size_t nBlocks, std::queue<Res>& rtQ,
                     bool isShowEachResponse)
         : dev_(dev)
         , blockSize_(blockSize)
@@ -148,15 +162,15 @@ public:
 
         double begin, end;
         begin = getTime();
-        double rt;
         double max = -1.0;
         double min = -1.0;
         double total = 0.0;
+        Res res;
         
         for (size_t i = 0; i < n; i ++) {
-            rt = execBlockIO();
-            if (isShowEachResponse_) { rtQ_.push(rt); }
-            updateRt(rt, max, min, total);
+            res = execBlockIO();
+            if (isShowEachResponse_) { rtQ_.push(res); }
+            updateRt(res.second, max, min, total);
         }
         end = getTime();
         ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
@@ -167,14 +181,15 @@ public:
         double begin, end;
         begin = getTime(); end = begin;
 
-        double rt, max = -1.0, min = -1.0, total = 0.0;
+        double max = -1.0, min = -1.0, total = 0.0;
         size_t count = 0;
+        Res res;
         
         while (end - begin < static_cast<double>(n)) {
 
-            rt = execBlockIO();
-            if (isShowEachResponse_) { rtQ_.push(rt); }
-            updateRt(rt, max, min, total);
+            res = execBlockIO();
+            if (isShowEachResponse_) { rtQ_.push(res); }
+            updateRt(res.second, max, min, total);
             end = getTime();
             count ++;
         }
@@ -193,18 +208,26 @@ private:
     /**
      * @return response time.
      */
-    double execBlockIO() {
+    std::pair<bool, double> execBlockIO() {
         
         double begin, end;
-        begin = getTime();
         size_t oft = getRandomInt(nBlocks_) * blockSize_;
-        if (dev_.isWrite()) {
+        begin = getTime();
+        bool isWrite = false;
+        
+        switch(dev_.getMode()) {
+        case READ:  isWrite = false; break;
+        case WRITE: isWrite = true; break;
+        case MIX:   isWrite = (getRandomInt(2) == 0); break;
+        }
+        
+        if (isWrite) {
             dev_.write(oft, blockSize_, buf_);
         } else {
             dev_.read(oft, blockSize_, buf_);
         }
         end = getTime();
-        return end - begin;
+        return std::pair<bool, double>(isWrite, end - begin);
     }
     void updateRt(const double& rt, double& max, double& min, double& total) {
 
@@ -225,7 +248,7 @@ struct Options
     size_t diskSize;
     size_t blockSize;
     std::vector<std::string> args;
-    bool isWrite;
+    Mode mode;
     bool isShowEachResponse;
     
     size_t period;
@@ -235,7 +258,7 @@ struct Options
         : diskSize(0)
         , blockSize(0)
         , args()
-        , isWrite(false)
+        , mode(READ)
         , isShowEachResponse(false)
         , period(0)
         , count(0) {
@@ -255,7 +278,7 @@ struct Options
         programName = argv[0];
         
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:wrh");
+            int c = ::getopt(argc, argv, "s:b:p:c:wmrh");
 
             if (c < 0) { break; }
 
@@ -273,7 +296,10 @@ struct Options
                 count = ::atol(optarg);
                 break;
             case 'w': /* write */
-                isWrite = true;
+                mode = WRITE;
+                break;
+            case 'm': /* mix */
+                mode = MIX;
                 break;
             case 'r': /* show each response */
                 isShowEachResponse = true;
@@ -299,6 +325,8 @@ struct Options
                  "    -c num:  number of IOs to execute.\n"
                  "             -p and -c is exclusive.\n"
                  "    -w:      write instead read.\n"
+                 "    -m:      read/write mix instead read.\n"
+                 "             -w and -m is exclusive.\n"
                  "    -r:      show response of each IO.\n"
                  "    -h:      show this help.\n"
                  , programName.c_str()
@@ -309,14 +337,14 @@ struct Options
 int main(int argc, char* argv[])
 {
     ::srand(::time(0) + ::getpid());
-    std::queue<double> rtQ;
+    std::queue<Res> rtQ;
 
     try {
         Options opt(argc, argv);
         const size_t sizeInBytes = opt.diskSize * opt.blockSize;
         const bool isDirect = true;
         
-        BlockDevice bd(opt.args[0], sizeInBytes, opt.isWrite, isDirect);
+        BlockDevice bd(opt.args[0], sizeInBytes, opt.mode, isDirect);
         IoResponseBench bench(bd, opt.blockSize, opt.diskSize,
                               rtQ, opt.isShowEachResponse);
         if (opt.period > 0) {
@@ -327,7 +355,11 @@ int main(int argc, char* argv[])
 
         while (! rtQ.empty()) {
 
-            ::printf("response %.06f\n", rtQ.front());
+            Res res = rtQ.front();
+            bool isWrite = res.first;
+            double rt = res.second;
+            ::printf("response %.06f %s\n",
+                     rt, (isWrite ? "write" : "read"));
             rtQ.pop();
         }
     } catch (const std::string& e) {
