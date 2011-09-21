@@ -5,6 +5,8 @@
  */
 #define _FILE_OFFSET_BITS 64
 
+#define IORES_VERSION "1.0"
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -242,79 +244,96 @@ private:
     }
 };
 
-struct Options
+class Options
 {
-    std::string programName;
-    size_t diskSize;
-    size_t blockSize;
-    std::vector<std::string> args;
-    Mode mode;
-    bool isShowEachResponse;
+private:
+    std::string programName_;
+    size_t diskSize_;
+    size_t blockSize_;
+    std::vector<std::string> args_;
+    Mode mode_;
+    bool isShowEachResponse_;
+    bool isShowVersion_;
+    bool isShowHelp_;
     
-    size_t period;
-    size_t count;
+    size_t period_;
+    size_t count_;
 
+public:
     Options(int argc, char* argv[])
-        : diskSize(0)
-        , blockSize(0)
-        , args()
-        , mode(READ)
-        , isShowEachResponse(false)
-        , period(0)
-        , count(0) {
+        : diskSize_(0)
+        , blockSize_(0)
+        , args_()
+        , mode_(READ)
+        , isShowEachResponse_(false)
+        , isShowVersion_(false)
+        , isShowHelp_(false)
+        , period_(0)
+        , count_(0) {
 
         parse(argc, argv);
-        
-        if (args.size() != 1 || diskSize == 0 || blockSize == 0) {
+
+        if (isShowVersion_ || isShowHelp_) {
+            return;
+        }
+        if (args_.size() != 1 || diskSize_ == 0 || blockSize_ == 0) {
             throw std::string("specify disksize (-s), blocksize (-b), and device.");
         }
-        if (period == 0 && count == 0) {
+        if (period_ == 0 && count_ == 0) {
             throw std::string("specify period (-p) or count (-c).");
         }
     }
 
     void parse(int argc, char* argv[]) {
 
-        programName = argv[0];
+        programName_ = argv[0];
         
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:wmrh");
+            int c = ::getopt(argc, argv, "s:b:p:c:wmrvh");
 
             if (c < 0) { break; }
 
             switch (c) {
             case 's': /* disk size in blocks */
-                diskSize = ::atol(optarg);
+                diskSize_ = ::atol(optarg);
                 break;
             case 'b': /* blocksize */
-                blockSize = ::atol(optarg);
+                blockSize_ = ::atol(optarg);
                 break;
             case 'p': /* period */
-                period = ::atol(optarg);
+                period_ = ::atol(optarg);
                 break;
             case 'c': /* count */
-                count = ::atol(optarg);
+                count_ = ::atol(optarg);
                 break;
             case 'w': /* write */
-                mode = WRITE;
+                mode_ = WRITE;
                 break;
             case 'm': /* mix */
-                mode = MIX;
+                mode_ = MIX;
                 break;
             case 'r': /* show each response */
-                isShowEachResponse = true;
+                isShowEachResponse_ = true;
+                break;
+            case 'v': /* show version */
+                isShowVersion_ = true;
                 break;
             case 'h': /* help */
-                showHelp();
+                isShowHelp_ = true;
                 break;
             }
         }
 
         while (optind < argc) {
-            args.push_back(argv[optind ++]);
+            args_.push_back(argv[optind ++]);
         }
     }
 
+    void showVersion() {
+
+        ::printf("iores version %s\n", IORES_VERSION);
+    }
+    
     void showHelp() {
 
         ::printf("usage: %s [option(s)] [file or device]\n"
@@ -328,40 +347,65 @@ struct Options
                  "    -m:      read/write mix instead read.\n"
                  "             -w and -m is exclusive.\n"
                  "    -r:      show response of each IO.\n"
+                 "    -v:      show version.\n"
                  "    -h:      show this help.\n"
-                 , programName.c_str()
+                 , programName_.c_str()
             );
     }
+
+    const std::vector<std::string>& getArgs() const { return args_; }
+    size_t getDiskSize() const { return diskSize_; }
+    size_t getBlockSize() const { return blockSize_; }
+    Mode getMode() const { return mode_; }
+    bool isShowEachResponse() const { return isShowEachResponse_; }
+    bool isShowVersion() const { return isShowVersion_; }
+    bool isShowHelp() const { return isShowHelp_; }
+    size_t getPeriod() const { return period_; }
+    size_t getCount() const { return count_; }
 };
+
+void execExperiment(const Options& opt) {
+
+    std::queue<Res> rtQ;
+    
+    const size_t sizeInBytes = opt.getDiskSize() * opt.getBlockSize();
+    const bool isDirect = true;
+    
+    BlockDevice bd(opt.getArgs()[0], sizeInBytes, opt.getMode(), isDirect);
+    IoResponseBench bench(bd, opt.getBlockSize(), opt.getDiskSize(),
+                          rtQ, opt.isShowEachResponse());
+    if (opt.getPeriod() > 0) {
+        bench.execNsecs(opt.getPeriod());
+    } else {
+        bench.execNtimes(opt.getCount());
+    }
+
+    while (! rtQ.empty()) {
+        
+        Res res = rtQ.front();
+        bool isWrite = res.first;
+        double rt = res.second;
+        ::printf("response %.06f %s\n",
+                 rt, (isWrite ? "write" : "read"));
+        rtQ.pop();
+    }
+}
 
 int main(int argc, char* argv[])
 {
     ::srand(::time(0) + ::getpid());
-    std::queue<Res> rtQ;
 
     try {
         Options opt(argc, argv);
-        const size_t sizeInBytes = opt.diskSize * opt.blockSize;
-        const bool isDirect = true;
-        
-        BlockDevice bd(opt.args[0], sizeInBytes, opt.mode, isDirect);
-        IoResponseBench bench(bd, opt.blockSize, opt.diskSize,
-                              rtQ, opt.isShowEachResponse);
-        if (opt.period > 0) {
-            bench.execNsecs(opt.period);
+
+        if (opt.isShowVersion()) {
+            opt.showVersion();
+        } else if (opt.isShowHelp()) {
+            opt.showHelp();
         } else {
-            bench.execNtimes(opt.count);
+            execExperiment(opt);
         }
-
-        while (! rtQ.empty()) {
-
-            Res res = rtQ.front();
-            bool isWrite = res.first;
-            double rt = res.second;
-            ::printf("response %.06f %s\n",
-                     rt, (isWrite ? "write" : "read"));
-            rtQ.pop();
-        }
+        
     } catch (const std::string& e) {
 
         ::printf("error: %s\n", e.c_str());
