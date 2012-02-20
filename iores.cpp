@@ -13,20 +13,25 @@
 #include <sstream>
 #include <queue>
 #include <utility>
+#include <tuple>
+#include <algorithm>
+#include <thread>
 
-#include <stdio.h>
+#include <cstdio>
+#include <cassert>
+#include <cstring>
+#include <cstdlib>
+
 #include <errno.h>
 #include <unistd.h>
-#include <string.h>
-#include <stdlib.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-/* (isWrite, resonse time) */
-typedef std::pair<bool, double> Res;
+/* (threadId, isWrite, resonse time) */
+typedef std::tuple<int, bool, double> Res;
 
 static inline double getTime()
 {
@@ -48,7 +53,7 @@ enum Mode
 class BlockDevice
 {
 private:
-    std::string name_;
+    const std::string name_;
     const size_t size_;
     const Mode mode_;
     const bool isDirect_;
@@ -65,7 +70,7 @@ public:
         ::printf("device %s size %zu mode %d isDirect %d\n",
                  name_.c_str(), size_, mode_, isDirect_);
 
-        int flags;
+        int flags = 0;
         switch (mode_) {
         case READ:  flags = O_RDONLY; break;
         case WRITE: flags = O_WRONLY; break;
@@ -124,6 +129,7 @@ public:
 class IoResponseBench
 {
 private:
+    const int threadId_;
     BlockDevice& dev_;
     size_t blockSize_;
     size_t nBlocks_;
@@ -138,12 +144,15 @@ public:
      * @param bs block size.
      * @param nBlocks disk size as number of blocks.
      */
-    IoResponseBench(BlockDevice& dev, size_t blockSize,
+    IoResponseBench(int threadId, BlockDevice& dev, size_t blockSize,
                     size_t nBlocks, std::queue<Res>& rtQ,
                     bool isShowEachResponse)
-        : dev_(dev)
+        : threadId_(threadId)
+        , dev_(dev)
         , blockSize_(blockSize)
         , nBlocks_(nBlocks)
+        , bufV_(nullptr)
+        , buf_(nullptr)
         , rtQ_(rtQ)
         , isShowEachResponse_(isShowEachResponse) {
 
@@ -162,7 +171,7 @@ public:
     }
     void execNtimes(size_t n) {
 
-        double begin, end;
+        __attribute__((unused)) double begin, end;
         begin = getTime();
         double max = -1.0;
         double min = -1.0;
@@ -172,7 +181,7 @@ public:
         for (size_t i = 0; i < n; i ++) {
             res = execBlockIO();
             if (isShowEachResponse_) { rtQ_.push(res); }
-            updateRt(res.second, max, min, total);
+            updateRt(std::get<2>(res), max, min, total);
         }
         end = getTime();
         ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
@@ -191,15 +200,13 @@ public:
 
             res = execBlockIO();
             if (isShowEachResponse_) { rtQ_.push(res); }
-            updateRt(res.second, max, min, total);
+            updateRt(std::get<2>(res), max, min, total);
             end = getTime();
             count ++;
         }
         ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
                  total, count, total / static_cast<double>(count), max, min);
     }
-
-    
     
 private:
     int getRandomInt(int max) {
@@ -210,7 +217,7 @@ private:
     /**
      * @return response time.
      */
-    std::pair<bool, double> execBlockIO() {
+    std::tuple<int, bool, double> execBlockIO() {
         
         double begin, end;
         size_t oft = getRandomInt(nBlocks_) * blockSize_;
@@ -229,7 +236,7 @@ private:
             dev_.read(oft, blockSize_, buf_);
         }
         end = getTime();
-        return std::pair<bool, double>(isWrite, end - begin);
+        return std::tuple<int, bool, double>(threadId_, isWrite, end - begin);
     }
     void updateRt(const double& rt, double& max, double& min, double& total) {
 
@@ -258,6 +265,7 @@ private:
     
     size_t period_;
     size_t count_;
+    size_t nthreads_;
 
 public:
     Options(int argc, char* argv[])
@@ -269,7 +277,8 @@ public:
         , isShowVersion_(false)
         , isShowHelp_(false)
         , period_(0)
-        , count_(0) {
+        , count_(0)
+        , nthreads_(1) {
 
         parse(argc, argv);
 
@@ -289,7 +298,7 @@ public:
         programName_ = argv[0];
         
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:wmrvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:wmrvh");
 
             if (c < 0) { break; }
 
@@ -311,6 +320,9 @@ public:
                 break;
             case 'm': /* mix */
                 mode_ = MIX;
+                break;
+            case 't': /* nthreads */
+                nthreads_ = ::atol(optarg);
                 break;
             case 'r': /* show each response */
                 isShowEachResponse_ = true;
@@ -346,6 +358,7 @@ public:
                  "    -w:      write instead read.\n"
                  "    -m:      read/write mix instead read.\n"
                  "             -w and -m is exclusive.\n"
+                 "    -t num:  number of threads in parallel.\n"
                  "    -r:      show response of each IO.\n"
                  "    -v:      show version.\n"
                  "    -h:      show this help.\n"
@@ -362,33 +375,70 @@ public:
     bool isShowHelp() const { return isShowHelp_; }
     size_t getPeriod() const { return period_; }
     size_t getCount() const { return count_; }
+    size_t getNthreads() const { return nthreads_; }
 };
 
-void execExperiment(const Options& opt) {
 
-    std::queue<Res> rtQ;
-    
+void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ)
+{
     const size_t sizeInBytes = opt.getDiskSize() * opt.getBlockSize();
     const bool isDirect = true;
-    
+
     BlockDevice bd(opt.getArgs()[0], sizeInBytes, opt.getMode(), isDirect);
-    IoResponseBench bench(bd, opt.getBlockSize(), opt.getDiskSize(),
+    IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getDiskSize(),
                           rtQ, opt.isShowEachResponse());
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
         bench.execNtimes(opt.getCount());
     }
+}
 
+void worker_start(std::vector<std::thread>& workers, int n, const Options& opt,
+                  std::vector<std::queue<Res> >& rtQs)
+{
+
+    rtQs.resize(n);
+    for (int i = 0; i < n; i ++) {
+
+        auto th = std::thread(do_work, i, std::ref(opt), std::ref(rtQs[i]));
+        workers.push_back(std::move(th));
+    }
+}
+
+void worker_join(std::vector<std::thread>& workers)
+{
+    std::for_each(workers.begin(), workers.end(),
+                  [](std::thread& th) { th.join(); });
+}
+
+void pop_and_show_rtQ(std::queue<Res>& rtQ)
+{
     while (! rtQ.empty()) {
-        
         Res res = rtQ.front();
-        bool isWrite = res.first;
-        double rt = res.second;
-        ::printf("response %.06f %s\n",
-                 rt, (isWrite ? "write" : "read"));
+        int threadId = std::get<0>(res);
+        bool isWrite = std::get<1>(res);
+        double rt = std::get<2>(res);
+        ::printf("thread %d response %.06f %s\n",
+                 threadId, rt, (isWrite ? "write" : "read"));
         rtQ.pop();
     }
+}
+
+
+void execExperiment(const Options& opt)
+{
+    const size_t nthreads = opt.getNthreads();
+    assert(nthreads > 0);
+
+    std::vector<std::queue<Res> > rtQs;
+    
+    std::vector<std::thread> workers;
+    worker_start(workers, nthreads, opt, rtQs);
+    worker_join(workers);
+
+    assert(rtQs.size() == nthreads);
+    std::for_each(rtQs.begin(), rtQs.end(), pop_and_show_rtQ);
 }
 
 int main(int argc, char* argv[])
@@ -409,6 +459,9 @@ int main(int argc, char* argv[])
     } catch (const std::string& e) {
 
         ::printf("error: %s\n", e.c_str());
+    } catch (...) {
+
+        ::printf("caught another error.\n");
     }
     
     return 0;
