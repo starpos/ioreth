@@ -33,6 +33,9 @@
 /* (threadId, isWrite, resonse time) */
 typedef std::tuple<int, bool, double> Res;
 
+/* Attriubte macro. */
+#define __UNUSED __attribute__((unused))
+
 static inline double getTime()
 {
     struct timeval tv;
@@ -66,10 +69,10 @@ public:
         , mode_(mode)
         , isDirect_(isDirect)
         , fd_(-1) {
-
+#if 0
         ::printf("device %s size %zu mode %d isDirect %d\n",
                  name_.c_str(), size_, mode_, isDirect_);
-
+#endif
         int flags = 0;
         switch (mode_) {
         case READ:  flags = O_RDONLY; break;
@@ -126,6 +129,65 @@ public:
     Mode getMode() const { return mode_; }
 };
 
+class PerformanceStatistics
+{
+private:
+    double total_;
+    double max_;
+    double min_;
+    size_t count_;
+
+public:
+    PerformanceStatistics()
+        : total_(0), max_(-1.0), min_(-1.0), count_(0) {}
+    PerformanceStatistics(double total, double max, double min, size_t count)
+        : total_(total), max_(max), min_(min), count_(count) {}
+
+    void updateRt(double rt) {
+
+        if (max_ < 0 || min_ < 0) {
+            max_ = rt; min_ = rt;
+        } else if (max_ < rt) {
+            max_ = rt;
+        } else if (min_ > rt) {
+            min_ = rt;
+        }
+        total_ += rt;
+        count_ ++;
+    }
+    
+    double getMax() const { return max_; }
+    double getMin() const { return min_; }
+    double getTotal() const { return total_; }
+    size_t getCount() const { return count_; }
+
+    double getAverage() const { return total_ / (double)count_; }
+
+    void put() const {
+        ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
+                 getTotal(), getCount(), getAverage(),
+                 getMax(), getMin());
+    }
+};
+
+PerformanceStatistics mergeStats(std::vector<PerformanceStatistics>& stats)
+{
+    double total = 0;
+    double max = -1.0;
+    double min = -1.0;
+    size_t count = 0;
+
+    std::for_each(stats.begin(), stats.end(), [&](PerformanceStatistics& stat) {
+
+            total += stat.getTotal();
+            if (max < 0 || max < stat.getMax()) { max = stat.getMax(); }
+            if (min < 0 || min > stat.getMin()) { min = stat.getMin(); }
+            count += stat.getCount();
+        });
+
+    return PerformanceStatistics(total, max, min, count);
+}
+
 class IoResponseBench
 {
 private:
@@ -136,6 +198,7 @@ private:
     void* bufV_;
     char* buf_;
     std::queue<Res>& rtQ_;
+    PerformanceStatistics& stat_;
     bool isShowEachResponse_;
 
 public:
@@ -146,6 +209,7 @@ public:
      */
     IoResponseBench(int threadId, BlockDevice& dev, size_t blockSize,
                     size_t nBlocks, std::queue<Res>& rtQ,
+                    PerformanceStatistics& stat,
                     bool isShowEachResponse)
         : threadId_(threadId)
         , dev_(dev)
@@ -154,11 +218,12 @@ public:
         , bufV_(nullptr)
         , buf_(nullptr)
         , rtQ_(rtQ)
+        , stat_(stat)
         , isShowEachResponse_(isShowEachResponse) {
-
+#if 0
         ::printf("blockSize %zu nBlocks %zu isShowEachResponse %d\n",
                  blockSize_, nBlocks_, isShowEachResponse_);
-
+#endif
         if(::posix_memalign(&bufV_, blockSize_, blockSize_) != 0) {
             std::string e("posix_memalign failed");
             throw e;
@@ -171,41 +236,32 @@ public:
     }
     void execNtimes(size_t n) {
 
-        __attribute__((unused)) double begin, end;
+        __UNUSED double begin, end;
         begin = getTime();
-        double max = -1.0;
-        double min = -1.0;
-        double total = 0.0;
         Res res;
         
         for (size_t i = 0; i < n; i ++) {
             res = execBlockIO();
             if (isShowEachResponse_) { rtQ_.push(res); }
-            updateRt(std::get<2>(res), max, min, total);
+            stat_.updateRt(std::get<2>(res));
         }
         end = getTime();
-        ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
-                 total, n, total / static_cast<double>(n), max, min);
+        stat_.put();
     }
     void execNsecs(size_t n) {
 
         double begin, end;
         begin = getTime(); end = begin;
 
-        double max = -1.0, min = -1.0, total = 0.0;
-        size_t count = 0;
         Res res;
-        
         while (end - begin < static_cast<double>(n)) {
 
             res = execBlockIO();
             if (isShowEachResponse_) { rtQ_.push(res); }
-            updateRt(std::get<2>(res), max, min, total);
+            stat_.updateRt(std::get<2>(res));
             end = getTime();
-            count ++;
         }
-        ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
-                 total, count, total / static_cast<double>(count), max, min);
+        stat_.put();
     }
     
 private:
@@ -237,17 +293,6 @@ private:
         }
         end = getTime();
         return std::tuple<int, bool, double>(threadId_, isWrite, end - begin);
-    }
-    void updateRt(const double& rt, double& max, double& min, double& total) {
-
-        if (max < 0 || min < 0) {
-            max = rt; min = rt;
-        } else if (max < rt) {
-            max = rt;
-        } else if (min > rt) {
-            min = rt;
-        }
-        total += rt;
     }
 };
 
@@ -379,14 +424,14 @@ public:
 };
 
 
-void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ)
+void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ, PerformanceStatistics& stat)
 {
     const size_t sizeInBytes = opt.getDiskSize() * opt.getBlockSize();
     const bool isDirect = true;
 
     BlockDevice bd(opt.getArgs()[0], sizeInBytes, opt.getMode(), isDirect);
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getDiskSize(),
-                          rtQ, opt.isShowEachResponse());
+                          rtQ, stat, opt.isShowEachResponse());
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
@@ -395,13 +440,14 @@ void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ)
 }
 
 void worker_start(std::vector<std::thread>& workers, int n, const Options& opt,
-                  std::vector<std::queue<Res> >& rtQs)
+                  std::vector<std::queue<Res> >& rtQs, std::vector<PerformanceStatistics>& stats)
 {
 
     rtQs.resize(n);
+    stats.resize(n);
     for (int i = 0; i < n; i ++) {
 
-        auto th = std::thread(do_work, i, std::ref(opt), std::ref(rtQs[i]));
+        auto th = std::thread(do_work, i, std::ref(opt), std::ref(rtQs[i]), std::ref(stats[i]));
         workers.push_back(std::move(th));
     }
 }
@@ -432,13 +478,18 @@ void execExperiment(const Options& opt)
     assert(nthreads > 0);
 
     std::vector<std::queue<Res> > rtQs;
+    std::vector<PerformanceStatistics> stats;
     
     std::vector<std::thread> workers;
-    worker_start(workers, nthreads, opt, rtQs);
+    worker_start(workers, nthreads, opt, rtQs, stats);
     worker_join(workers);
 
     assert(rtQs.size() == nthreads);
     std::for_each(rtQs.begin(), rtQs.end(), pop_and_show_rtQ);
+
+    PerformanceStatistics stat = mergeStats(stats);
+    ::printf("---------------\n");
+    stat.put();
 }
 
 int main(int argc, char* argv[])
