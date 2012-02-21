@@ -15,7 +15,8 @@
 #include <utility>
 #include <tuple>
 #include <algorithm>
-#include <thread>
+#include <future>
+#include <mutex>
 
 #include <cstdio>
 #include <cassert>
@@ -188,6 +189,8 @@ PerformanceStatistics mergeStats(std::vector<PerformanceStatistics>& stats)
 class IoResponseBench
 {
 private:
+    static std::mutex mutex_;
+    
     const int threadId_;
     BlockDevice& dev_;
     size_t blockSize_;
@@ -239,8 +242,7 @@ public:
             if (isShowEachResponse_) { rtQ_.push(res); }
             stat_.updateRt(std::get<2>(res));
         }
-        ::printf("id %d ", threadId_);
-        stat_.put();
+        putStat();
     }
     void execNsecs(size_t n) {
 
@@ -255,8 +257,7 @@ public:
             stat_.updateRt(std::get<2>(res));
             end = getTime();
         }
-        ::printf("id %d ", threadId_);
-        stat_.put();
+        putStat();
     }
     
 private:
@@ -271,7 +272,7 @@ private:
     std::tuple<int, bool, double> execBlockIO() {
         
         double begin, end;
-        size_t oft = getRandomInt(nBlocks_) * blockSize_;
+        size_t oft = (size_t)getRandomInt(nBlocks_) * blockSize_;
         begin = getTime();
         bool isWrite = false;
         
@@ -289,7 +290,16 @@ private:
         end = getTime();
         return std::tuple<int, bool, double>(threadId_, isWrite, end - begin);
     }
+
+    void putStat() const {
+        std::lock_guard<std::mutex> lk(mutex_);
+
+        ::printf("id %d ", threadId_);
+        stat_.put();
+    }
 };
+
+std::mutex IoResponseBench::mutex_;
 
 class Options
 {
@@ -434,7 +444,7 @@ void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ, Performance
     }
 }
 
-void worker_start(std::vector<std::thread>& workers, int n, const Options& opt,
+void worker_start(std::vector<std::future<void> >& workers, int n, const Options& opt,
                   std::vector<std::queue<Res> >& rtQs, std::vector<PerformanceStatistics>& stats)
 {
 
@@ -442,15 +452,15 @@ void worker_start(std::vector<std::thread>& workers, int n, const Options& opt,
     stats.resize(n);
     for (int i = 0; i < n; i ++) {
 
-        auto th = std::thread(do_work, i, std::ref(opt), std::ref(rtQs[i]), std::ref(stats[i]));
-        workers.push_back(std::move(th));
+        std::future<void> f = std::async(std::launch::async, do_work, i, std::ref(opt), std::ref(rtQs[i]), std::ref(stats[i]));
+        workers.push_back(std::move(f));
     }
 }
 
-void worker_join(std::vector<std::thread>& workers)
+void worker_join(std::vector<std::future<void> >& workers)
 {
     std::for_each(workers.begin(), workers.end(),
-                  [](std::thread& th) { th.join(); });
+                  [](std::future<void>& f) { f.get(); });
 }
 
 void pop_and_show_rtQ(std::queue<Res>& rtQ)
@@ -466,7 +476,6 @@ void pop_and_show_rtQ(std::queue<Res>& rtQ)
     }
 }
 
-
 void execExperiment(const Options& opt)
 {
     const size_t nthreads = opt.getNthreads();
@@ -475,7 +484,7 @@ void execExperiment(const Options& opt)
     std::vector<std::queue<Res> > rtQs;
     std::vector<PerformanceStatistics> stats;
     
-    std::vector<std::thread> workers;
+    std::vector<std::future<void> > workers;
     worker_start(workers, nthreads, opt, rtQs, stats);
     worker_join(workers);
 
