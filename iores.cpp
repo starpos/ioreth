@@ -33,9 +33,6 @@
 /* (threadId, isWrite, resonse time) */
 typedef std::tuple<int, bool, double> Res;
 
-/* Attriubte macro. */
-#define __UNUSED __attribute__((unused))
-
 static inline double getTime()
 {
     struct timeval tv;
@@ -236,16 +233,13 @@ public:
     }
     void execNtimes(size_t n) {
 
-        __UNUSED double begin, end;
-        begin = getTime();
         Res res;
-        
         for (size_t i = 0; i < n; i ++) {
             res = execBlockIO();
             if (isShowEachResponse_) { rtQ_.push(res); }
             stat_.updateRt(std::get<2>(res));
         }
-        end = getTime();
+        ::printf("id %d ", threadId_);
         stat_.put();
     }
     void execNsecs(size_t n) {
@@ -261,6 +255,7 @@ public:
             stat_.updateRt(std::get<2>(res));
             end = getTime();
         }
+        ::printf("id %d ", threadId_);
         stat_.put();
     }
     
@@ -488,7 +483,8 @@ void execExperiment(const Options& opt)
     std::for_each(rtQs.begin(), rtQs.end(), pop_and_show_rtQ);
 
     PerformanceStatistics stat = mergeStats(stats);
-    ::printf("---------------\n");
+    ::printf("---------------\n"
+             "all %zu ", nthreads);
     stat.put();
 }
 
