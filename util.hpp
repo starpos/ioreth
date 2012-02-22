@@ -12,6 +12,16 @@
 #include <string>
 #include <algorithm>
 
+#include <unistd.h>
+#include <errno.h>
+#include <time.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <linux/fs.h>
+
 /* (threadId, isWrite, resonse time) */
 typedef std::tuple<int, bool, double> Res;
 
@@ -29,45 +39,41 @@ static inline double getTime()
 
 enum Mode
 {
-    READ, WRITE, MIX
+    READ_MODE, WRITE_MODE, MIX_MODE
 };
 
 class BlockDevice
 {
 private:
     const std::string name_;
-    const size_t size_;
     const Mode mode_;
-    const bool isDirect_;
     int fd_;
+    const off_t deviceSize_;
+    size_t accessRange_;
 
 public:
-    BlockDevice(const std::string& name, size_t size, const Mode mode, bool isDirect)
+    BlockDevice(const std::string& name, const Mode mode, bool isDirect)
         : name_(name)
-        , size_(size)
         , mode_(mode)
-        , isDirect_(isDirect)
-        , fd_(-1) {
+        , fd_(openDevice(name, mode, isDirect))
+        , deviceSize_(getDeviceSize())
+        , accessRange_(deviceSize_) {
 #if 0
         ::printf("device %s size %zu mode %d isDirect %d\n",
                  name_.c_str(), size_, mode_, isDirect_);
 #endif
-        int flags = 0;
-        switch (mode_) {
-        case READ:  flags = O_RDONLY; break;
-        case WRITE: flags = O_WRONLY; break;
-        case MIX:   flags = O_RDWR;   break;
-        }
-        if (isDirect_) { flags |= O_DIRECT; }
-
-        fd_ = ::open(name_.c_str(), flags);
-        if (fd_ < 0) {
-            std::stringstream ss;
-            ss << "open failed: " << name_
-               << " " << ::strerror(errno) << ".";
-            throw ss.str();
-        }
     }
+    explicit BlockDevice(BlockDevice&& bd)
+        : name_(std::move(bd.name_))
+        , mode_(bd.mode_)
+        , fd_(bd.fd_)
+        , deviceSize_(bd.deviceSize_)
+        , accessRange_(bd.accessRange_){
+
+        bd.fd_ = -1;
+        bd.accessRange_ = 0;
+    }
+    
     ~BlockDevice() {
 
         if (fd_ > 0) {
@@ -75,9 +81,19 @@ public:
             fd_ = -1;
         }
     }
+
+    void setAccessRange(off_t accessRange) {
+
+        if (accessRange <= deviceSize_) {
+            accessRange_ = accessRange;
+        } else if (accessRange > deviceSize_) {
+            accessRange_ = deviceSize_;
+        }
+    }
+    
     void read(off_t oft, size_t size, char* buf) {
 
-        if (size_ < oft + size) { throw std::string("range error."); }
+        if (accessRange_ < oft + size) { throw std::string("range error."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
@@ -91,8 +107,8 @@ public:
     }
     void write(off_t oft, size_t size, char* buf) {
 
-        if (size_ < oft + size) { throw std::string("range error."); }
-        if (mode_ == READ) { throw std::string("write is not permitted."); }
+        if (accessRange_ < oft + size) { throw std::string("range error."); }
+        if (mode_ == READ_MODE) { throw std::string("write is not permitted."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
@@ -105,7 +121,62 @@ public:
             s += ret;
         }
     }
-    Mode getMode() const { return mode_; }
+    const Mode getMode() const { return mode_; }
+
+private:
+
+    /**
+     * Helper function for constructor.
+     */
+    int openDevice(const std::string& name, const Mode mode, bool isDirect) {
+
+        int fd;
+        int flags = 0;
+        switch (mode) {
+        case READ_MODE:  flags = O_RDONLY; break;
+        case WRITE_MODE: flags = O_WRONLY; break;
+        case MIX_MODE:   flags = O_RDWR;   break;
+        }
+        if (isDirect) { flags |= O_DIRECT; }
+
+        fd = ::open(name_.c_str(), flags);
+        if (fd < 0) {
+            std::stringstream ss;
+            ss << "open failed: " << name_
+               << " " << ::strerror(errno) << ".";
+            throw ss.str();
+        }
+        return fd;
+    }
+    
+    /**
+     * Helper function for constructor.
+     * Get device size in bytes.
+     */
+    off_t getDeviceSize() const {
+
+        off_t ret;
+        struct stat s;
+        if (::fstat(fd_, &s) < 0) {
+            std::stringstream ss;
+            ss << "fstat failed: " << name_ << " " << ::strerror(errno) << ".";
+            throw ss.str();
+        }
+        if ((s.st_mode & S_IFMT) == S_IFBLK) {
+            size_t size;
+            if (::ioctl(fd_, BLKGETSIZE64, &size) < 0) {
+                std::stringstream ss;
+                ss << "ioctl failed: " << name_ << " " << ::strerror(errno) << ".";
+                throw ss.str();
+            }
+            ret = size;
+        } else {
+            ret = s.st_size;
+        }
+        
+        std::cout << "devicesize: " << ret << std::endl; //debug
+        return ret;
+    }
 };
 
 class PerformanceStatistics

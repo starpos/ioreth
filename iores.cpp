@@ -41,7 +41,7 @@ private:
     const int threadId_;
     BlockDevice& dev_;
     size_t blockSize_;
-    size_t nBlocks_;
+    size_t accessRange_;
     void* bufV_;
     char* buf_;
     std::queue<Res>& rtQ_;
@@ -52,24 +52,24 @@ public:
     /**
      * @param dev block device.
      * @param bs block size.
-     * @param nBlocks disk size as number of blocks.
+     * @param accessRange in blocks.
      */
     IoResponseBench(int threadId, BlockDevice& dev, size_t blockSize,
-                    size_t nBlocks, std::queue<Res>& rtQ,
+                    size_t accessRange, std::queue<Res>& rtQ,
                     PerformanceStatistics& stat,
                     bool isShowEachResponse)
         : threadId_(threadId)
         , dev_(dev)
         , blockSize_(blockSize)
-        , nBlocks_(nBlocks)
+        , accessRange_(accessRange)
         , bufV_(nullptr)
         , buf_(nullptr)
         , rtQ_(rtQ)
         , stat_(stat)
         , isShowEachResponse_(isShowEachResponse) {
 #if 0
-        ::printf("blockSize %zu nBlocks %zu isShowEachResponse %d\n",
-                 blockSize_, nBlocks_, isShowEachResponse_);
+        ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
+                 blockSize_, accessRange_, isShowEachResponse_);
 #endif
         if(::posix_memalign(&bufV_, blockSize_, blockSize_) != 0) {
             std::string e("posix_memalign failed");
@@ -119,14 +119,14 @@ private:
     std::tuple<int, bool, double> execBlockIO() {
         
         double begin, end;
-        size_t oft = (size_t)getRandomInt(nBlocks_) * blockSize_;
+        size_t oft = (size_t)getRandomInt(accessRange_) * blockSize_;
         begin = getTime();
         bool isWrite = false;
         
         switch(dev_.getMode()) {
-        case READ:  isWrite = false; break;
-        case WRITE: isWrite = true; break;
-        case MIX:   isWrite = (getRandomInt(2) == 0); break;
+        case READ_MODE:  isWrite = false; break;
+        case WRITE_MODE: isWrite = true; break;
+        case MIX_MODE:   isWrite = (getRandomInt(2) == 0); break;
         }
         
         if (isWrite) {
@@ -152,7 +152,7 @@ class Options
 {
 private:
     std::string programName_;
-    size_t diskSize_;
+    size_t accessRange_;
     size_t blockSize_;
     std::vector<std::string> args_;
     Mode mode_;
@@ -166,10 +166,10 @@ private:
 
 public:
     Options(int argc, char* argv[])
-        : diskSize_(0)
+        : accessRange_(0)
         , blockSize_(0)
         , args_()
-        , mode_(READ)
+        , mode_(READ_MODE)
         , isShowEachResponse_(false)
         , isShowVersion_(false)
         , isShowHelp_(false)
@@ -182,8 +182,8 @@ public:
         if (isShowVersion_ || isShowHelp_) {
             return;
         }
-        if (args_.size() != 1 || diskSize_ == 0 || blockSize_ == 0) {
-            throw std::string("specify disksize (-s), blocksize (-b), and device.");
+        if (args_.size() != 1 || blockSize_ == 0) {
+            throw std::string("specify blocksize (-b), and device.");
         }
         if (period_ == 0 && count_ == 0) {
             throw std::string("specify period (-p) or count (-c).");
@@ -200,8 +200,8 @@ public:
             if (c < 0) { break; }
 
             switch (c) {
-            case 's': /* disk size in blocks */
-                diskSize_ = ::atol(optarg);
+            case 's': /* disk access range in blocks */
+                accessRange_ = ::atol(optarg);
                 break;
             case 'b': /* blocksize */
                 blockSize_ = ::atol(optarg);
@@ -213,10 +213,10 @@ public:
                 count_ = ::atol(optarg);
                 break;
             case 'w': /* write */
-                mode_ = WRITE;
+                mode_ = WRITE_MODE;
                 break;
             case 'm': /* mix */
-                mode_ = MIX;
+                mode_ = MIX_MODE;
                 break;
             case 't': /* nthreads */
                 nthreads_ = ::atol(optarg);
@@ -247,7 +247,7 @@ public:
 
         ::printf("usage: %s [option(s)] [file or device]\n"
                  "options: \n"
-                 "    -s size: disksize in blocks.\n"
+                 "    -s size: access range in blocks.\n"
                  "    -b size: blocksize in bytes.\n"
                  "    -p secs: execute period in seconds.\n"
                  "    -c num:  number of IOs to execute.\n"
@@ -264,7 +264,7 @@ public:
     }
 
     const std::vector<std::string>& getArgs() const { return args_; }
-    size_t getDiskSize() const { return diskSize_; }
+    size_t getAccessRange() const { return accessRange_; }
     size_t getBlockSize() const { return blockSize_; }
     Mode getMode() const { return mode_; }
     bool isShowEachResponse() const { return isShowEachResponse_; }
@@ -278,11 +278,14 @@ public:
 
 void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ, PerformanceStatistics& stat)
 {
-    const size_t sizeInBytes = opt.getDiskSize() * opt.getBlockSize();
     const bool isDirect = true;
 
-    BlockDevice bd(opt.getArgs()[0], sizeInBytes, opt.getMode(), isDirect);
-    IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getDiskSize(),
+    BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
+    if (opt.getAccessRange() > 0) {
+        bd.setAccessRange(opt.getAccessRange() * opt.getBlockSize());
+    }
+    
+    IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
                           rtQ, stat, opt.isShowEachResponse());
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
