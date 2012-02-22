@@ -17,63 +17,132 @@
 #include <cstdio>
 
 /**
- * Task to run by a thread in a thread pool.
+ * Base class for Task to run by a thread in a thread pool.
  *
  * T1 is argument type.
  * T2 is return value type.
  */
 template<typename T1, typename T2>
-class Task
+class __TaskBase
 {
-private:
-    std::function<T2(T1)> func_;
-    T1 arg_;
+protected:
     std::promise<T2> promise_;
     std::shared_future<T2> future_;
     
 public:
-    Task(std::function<T2(T1)> func, T1 arg, std::promise<T2>&& promise)
-        : func_(func)
-        , arg_(arg)
-        , promise_(std::move(promise))
+    explicit __TaskBase(std::promise<T2>&& promise)
+        : promise_(std::move(promise))
         , future_(promise_.get_future()) {}
+    virtual ~__TaskBase() throw() {}
+    bool valid() const { return future_.valid(); }
+private:
+    __TaskBase& operator=(const __TaskBase& task) { return *this; }
+    __TaskBase& operator=(__TaskBase&& task) { return *this; }
+    __TaskBase(const __TaskBase& task) {}
+};
 
-    Task(Task&& task)
-        : func_(task.func)
-        , arg_(std::move(task.arg_))
-        , promise_(std::move(task.promise_))
-        , future_(std::move(task.future_)) {}
-
-    Task& operator=(Task&& task) {
-
-        func_ = task.func_;
-        arg_ = std::move(task.arg_);
-        promise_ = std::move(task.promise_);
-        future_ = std::move(task.future_);
-    }
-    
+/**
+ * Task class with normal type T1 and T2.
+ */
+template<typename T1, typename T2>
+class Task : public __TaskBase<T1, T2>
+{
+private:
+    typedef __TaskBase<T1, T2> TB;
+    std::function<T2(T1)> func_;
+    T1 arg_;
+public:
+    explicit Task(const std::function<T2(T1)>& func, T1 arg, std::promise<T2>&& promise)
+        : TB(std::move(promise))
+        , func_(func)
+        , arg_(arg) {}
+    ~Task() throw() {}
     void run() {
-
         try {
-            promise_.set_value(std::move(func_(std::ref(arg_))));
+            TB::promise_.set_value(std::move(func_(std::ref(arg_))));
         } catch (...) {
-            promise_.set_exception(std::current_exception());
+            TB::promise_.set_exception(std::current_exception());
         }
     }
-
-    const T2& get() {
-
-        return future_.get();
-    }
-    
-    bool valid() const {
-
-        return future_.valid();
-    }
-private:
-    Task& operator=(const Task& task) { return *this; }
-    Task(const Task& task) {}
+    const T2& get() { return TB::future_.get(); }
 };
+
+/**
+ * Task class with T1, void.
+ */
+template<typename T1>
+class Task<T1, void> : public __TaskBase<T1, void>
+{
+private:
+    typedef __TaskBase<T1, void> TB;
+    std::function<void(T1)> func_;
+    T1 arg_;
+public:
+    explicit Task(const std::function<void(T1)>& func, T1 arg, std::promise<void>&& promise)
+        : TB(std::move(promise))
+        , func_(func)
+        , arg_(arg) {}
+    ~Task() throw() {}
+    void run() {
+        try {
+            func_(std::ref(arg_));
+            TB::promise_.set_value();
+        } catch (...) {
+            TB::promise_.set_exception(std::current_exception());
+        }
+    }
+    void get() { TB::future_.get(); }
+};
+
+/**
+ * Task class with void, T2.
+ */
+template<typename T2>
+class Task<void, T2> : public __TaskBase<void, T2>
+{
+private:
+    typedef __TaskBase<void, T2> TB;
+    std::function<T2()> func_;
+public:
+    explicit Task(const std::function<T2()>& func, std::promise<T2>&& promise)
+        : TB(std::move(promise))
+        , func_(func) {}
+    ~Task() throw() {}
+    void run() {
+        try {
+            TB::promise_.set_value(std::move(func_()));
+        } catch (...) {
+            TB::promise_.set_exception(std::current_exception());
+        }
+    }
+    const T2& get() { return TB::future_.get(); }
+};
+
+/**
+ * Task class with void, void.
+ */
+template<>
+class Task<void, void> : public __TaskBase<void, void>
+{
+private:
+    typedef __TaskBase<void, void> TB;
+    std::function<void()> func_;
+public:
+    explicit Task(const std::function<void()>& func, std::promise<void>&& promise)
+        : TB(std::move(promise))
+        , func_(func) {}
+    ~Task() throw() {}
+    void run() {
+        try {
+            func_();
+            TB::promise_.set_value();
+        } catch (...) {
+            TB::promise_.set_exception(std::current_exception());
+        }
+    }
+    void get() { TB::future_.get(); }
+};
+
 
 template<typename T1, typename T2>
 class ThreadPool
@@ -96,8 +165,7 @@ private:
     std::once_flag joinFlag_;
 
 public:
-
-    ThreadPool(size_t poolSize, size_t queueSize)
+    explicit ThreadPool(size_t poolSize, size_t queueSize)
         : shouldStop_(false)
         , canSubmit_(true)
         , poolSize_(poolSize)
@@ -105,7 +173,7 @@ public:
 
         for (size_t i = 0; i < poolSize_; i ++) {
 
-            std::thread th([&]() {this->do_work(); });
+            std::thread th([&]() { this->do_work(); });
             workers_.push_back(std::move(th));
         }
     }
@@ -205,14 +273,18 @@ private:
 
     void do_work() {
 
+#if 0
         printf("do_worker start.\n");
+#endif
         while (!shouldStop_) {
 
             TaskPtr task = dequeueTask();
             if (!task) { break; }
             task->run();
         }
+#if 0
         printf("do_worker end.\n");
+#endif
     }
 };
 
