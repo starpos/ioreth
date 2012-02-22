@@ -5,30 +5,38 @@
 #ifndef THREAD_POOL
 #define THREAD_POOL
 
+#include <iostream>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <future>
+#include <iterator>
 #include <list>
+#include <map>
 #include <queue>
 #include <functional>
 #include <algorithm>
 #include <memory>
-#include <mutex>
-#include <condition_variable>
 #include <cstdio>
+#include <cassert>
 
 /**
  * A simple fixed-sized thread pool.
  * type T is of items which will be passed to worker threads.
  */
+namespace __thread_pool {
+
+class ShouldStopException : public std::exception {};
+
 template<typename T>
-class ThreadPool
+class ThreadPoolBase
 {
-private:
+protected:
     volatile bool shouldStop_;
     volatile bool canSubmit_;
     
-    const size_t poolSize_;
-    const size_t queueSize_;
+    const unsigned int poolSize_;
+    const unsigned int queueSize_;
 
     std::mutex mutex_;
     std::condition_variable cv_;
@@ -38,31 +46,19 @@ private:
 
     std::once_flag joinFlag_;
 
-    std::function<void(T)> workerFunc_;
-
 public:
     /**
      * Constructor.
      * @poolSize Number of worker threads.
      * @queueSize Maximum length of queue.
-     * @workerFunc A function that will be executed by worker threads.
      */
-    explicit ThreadPool(size_t poolSize, size_t queueSize,
-                        const std::function<void(T)>& workerFunc)
+    ThreadPoolBase(unsigned int poolSize, unsigned int queueSize)
         : shouldStop_(false)
         , canSubmit_(true)
         , poolSize_(poolSize)
-        , queueSize_(queueSize)
-        , workerFunc_(workerFunc) {
-
-        for (size_t i = 0; i < poolSize_; i ++) {
-
-            std::thread th([&]() { this->do_work(); });
-            workers_.push_back(std::move(th));
-        }
-    }
-
-    ~ThreadPool() throw() {
+        , queueSize_(queueSize) {}
+    
+    virtual ~ThreadPoolBase() throw() {
 
         stop();
         join();
@@ -122,9 +118,16 @@ public:
                     }); });
     }
 
-private:
+protected:
 
-    struct ShouldStopException : public std::exception {};
+    void init(const std::function<void()>& do_work) {
+
+        for (unsigned int i = 0; i < poolSize_; i ++) {
+
+            std::thread th(do_work);
+            workers_.push_back(std::move(th));
+        }
+    }
     
     bool enqueue(T task) {
 
@@ -156,26 +159,91 @@ private:
         cv_.notify_all();
         return task;
     }
+};
 
-    void do_work() {
+} // namespace __thread_pool
 
-#if 0
-        printf("do_worker start.\n");
-#endif
-        while (!shouldStop_) {
+template<typename T>
+class ThreadPool : public __thread_pool::ThreadPoolBase<T>
+{
+private:
+    typedef __thread_pool::ThreadPoolBase<T> TPB;
+    std::function<void(T)> workerFunc_;
+public:
+    ThreadPool(unsigned int poolSize, unsigned int queueSize,
+                        const std::function<void(T)>& workerFunc)
+        : TPB(poolSize, queueSize)
+        , workerFunc_(workerFunc) {
 
+        TPB::init([&] { this->do_work(); });
+    }
+    
+    ~ThreadPool() throw() {}
+
+    void do_work() throw() {
+         
+         while (!TPB::shouldStop_) {
+            
             try {
-                workerFunc_(dequeue());
+                workerFunc_(TPB::dequeue());
                 
-            } catch (ShouldStopException& e) {
+            } catch (__thread_pool::ShouldStopException& e) {
                 break;
             }
         }
-#if 0
-        printf("do_worker end.\n");
-#endif
     }
 };
+
+template<typename T>
+class ThreadPoolWithId : public __thread_pool::ThreadPoolBase<T>
+{
+private:
+    typedef __thread_pool::ThreadPoolBase<T> TPB;
+
+    std::mutex mutex_;
+
+    std::map<std::thread::id, unsigned int> idMap_;
+    /* The second is thread id starting from 0. */
+    std::function<void(T, unsigned int)> workerFuncWithId_;
+public:
+    ThreadPoolWithId(unsigned int poolSize, unsigned int queueSize,
+                     const std::function<void(T, unsigned int)>& workerFuncWithId)
+        : TPB(poolSize, queueSize)
+        , workerFuncWithId_(workerFuncWithId) {
+
+        TPB::init([&] { this->do_work(); });
+        for (unsigned int i = 0; i < poolSize; i ++) {
+            idMap_[TPB::workers_[i].get_id()] = i;
+        }
+    }
+
+    ~ThreadPoolWithId() throw() {}
+
+    void do_work() throw() {
+        
+        while (!TPB::shouldStop_) {
+            try {
+                workerFuncWithId_(TPB::dequeue(), idMap_[std::this_thread::get_id()]);
+                
+            } catch (__thread_pool::ShouldStopException& e) {
+                break;
+            }
+        }
+    }
+
+#if 0
+    void check(const std::string& s) {
+
+        std::for_each(idMap_.begin(), idMap_.end(), [&](const std::pair<std::thread::id, unsigned int>& p) {
+
+                    std::lock_guard<std::mutex> lk(mutex_);
+                    std::cout << s << ": " << p.first << " i: " << p.second << std::endl;
+            });
+    }
+#endif
+
+};
+
 
 namespace __thread_pool {
 
@@ -204,7 +272,8 @@ private:
     TaskBase(const TaskBase& task) {}
 };
 
-}
+} // namespace __thread_pool
+
 
 /**
  * Task class with normal type T1 and T2.
@@ -225,7 +294,7 @@ private:
     std::function<T2(T1)> func_;
     T1 arg_;
 public:
-    explicit Task(const std::function<T2(T1)>& func, T1 arg, std::promise<T2>&& promise)
+    Task(const std::function<T2(T1)>& func, T1 arg, std::promise<T2>&& promise)
         : TB(std::move(promise))
         , func_(func)
         , arg_(arg) {}
@@ -251,7 +320,7 @@ private:
     std::function<void(T1)> func_;
     T1 arg_;
 public:
-    explicit Task(const std::function<void(T1)>& func, T1 arg, std::promise<void>&& promise)
+    Task(const std::function<void(T1)>& func, T1 arg, std::promise<void>&& promise)
         : TB(std::move(promise))
         , func_(func)
         , arg_(arg) {}
@@ -277,7 +346,7 @@ private:
     typedef __thread_pool::TaskBase<void, T2> TB;
     std::function<T2()> func_;
 public:
-    explicit Task(const std::function<T2()>& func, std::promise<T2>&& promise)
+    Task(const std::function<T2()>& func, std::promise<T2>&& promise)
         : TB(std::move(promise))
         , func_(func) {}
     ~Task() throw() {}
@@ -301,7 +370,7 @@ private:
     typedef __thread_pool::TaskBase<void, void> TB;
     std::function<void()> func_;
 public:
-    explicit Task(const std::function<void()>& func, std::promise<void>&& promise)
+    Task(const std::function<void()>& func, std::promise<void>&& promise)
         : TB(std::move(promise))
         , func_(func) {}
     ~Task() throw() {}
