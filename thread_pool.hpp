@@ -307,18 +307,6 @@ private:
                 }
             });
     }
-        
-#if 0
-    void check(const std::string& s) {
-
-        std::for_each(idMap_.begin(), idMap_.end(), [&](const std::pair<std::thread::id, unsigned int>& p) {
-
-                std::lock_guard<std::mutex> lk(mutex_);
-                std::cout << s << ": " << p.first << " i: " << p.second << std::endl;
-            });
-    }
-#endif
-
 };
 
 
