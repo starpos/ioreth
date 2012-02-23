@@ -44,7 +44,7 @@ private:
     size_t accessRange_;
     void* bufV_;
     char* buf_;
-    std::queue<Res>& rtQ_;
+    std::queue<IoLog>& rtQ_;
     PerformanceStatistics& stat_;
     bool isShowEachResponse_;
 
@@ -55,7 +55,7 @@ public:
      * @param accessRange in blocks.
      */
     IoResponseBench(int threadId, BlockDevice& dev, size_t blockSize,
-                    size_t accessRange, std::queue<Res>& rtQ,
+                    size_t accessRange, std::queue<IoLog>& rtQ,
                     PerformanceStatistics& stat,
                     bool isShowEachResponse)
         : threadId_(threadId)
@@ -87,11 +87,10 @@ public:
     }
     void execNtimes(size_t n) {
 
-        Res res;
         for (size_t i = 0; i < n; i ++) {
-            res = execBlockIO();
-            if (isShowEachResponse_) { rtQ_.push(res); }
-            stat_.updateRt(std::get<2>(res));
+            IoLog log = execBlockIO();
+            if (isShowEachResponse_) { rtQ_.push(log); }
+            stat_.updateRt(log.response);
         }
         putStat();
     }
@@ -100,12 +99,11 @@ public:
         double begin, end;
         begin = getTime(); end = begin;
 
-        Res res;
         while (end - begin < static_cast<double>(n)) {
 
-            res = execBlockIO();
-            if (isShowEachResponse_) { rtQ_.push(res); }
-            stat_.updateRt(std::get<2>(res));
+            IoLog log = execBlockIO();
+            if (isShowEachResponse_) { rtQ_.push(log); }
+            stat_.updateRt(log.response);
             end = getTime();
         }
         putStat();
@@ -120,10 +118,11 @@ private:
     /**
      * @return response time.
      */
-    std::tuple<int, bool, double> execBlockIO() {
+    IoLog execBlockIO() {
         
         double begin, end;
-        size_t oft = (size_t)getRandomInt(accessRange_) * blockSize_;
+        size_t blockId = (size_t)getRandomInt(accessRange_);
+        size_t oft = blockId * blockSize_;
         begin = getTime();
         bool isWrite = false;
         
@@ -139,7 +138,7 @@ private:
             dev_.read(oft, blockSize_, buf_);
         }
         end = getTime();
-        return std::tuple<int, bool, double>(threadId_, isWrite, end - begin);
+        return IoLog(threadId_, isWrite, blockId, begin, end - begin);
     }
 
     void putStat() const {
@@ -289,7 +288,7 @@ public:
 };
 
 
-void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ, PerformanceStatistics& stat)
+void do_work(int threadId, const Options& opt, std::queue<IoLog>& rtQ, PerformanceStatistics& stat)
 {
     const bool isDirect = true;
 
@@ -305,7 +304,7 @@ void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ, Performance
 }
 
 void worker_start(std::vector<std::future<void> >& workers, int n, const Options& opt,
-                  std::vector<std::queue<Res> >& rtQs, std::vector<PerformanceStatistics>& stats)
+                  std::vector<std::queue<IoLog> >& rtQs, std::vector<PerformanceStatistics>& stats)
 {
 
     rtQs.resize(n);
@@ -324,15 +323,11 @@ void worker_join(std::vector<std::future<void> >& workers)
                   [](std::future<void>& f) { f.get(); });
 }
 
-void pop_and_show_rtQ(std::queue<Res>& rtQ)
+void pop_and_show_rtQ(std::queue<IoLog>& rtQ)
 {
     while (! rtQ.empty()) {
-        Res res = rtQ.front();
-        int threadId = std::get<0>(res);
-        bool isWrite = std::get<1>(res);
-        double rt = std::get<2>(res);
-        ::printf("thread %d response %.06f %s\n",
-                 threadId, rt, (isWrite ? "write" : "read"));
+        IoLog& log = rtQ.front();
+        log.print();
         rtQ.pop();
     }
 }
@@ -342,7 +337,7 @@ void execExperiment(const Options& opt)
     const size_t nthreads = opt.getNthreads();
     assert(nthreads > 0);
 
-    std::vector<std::queue<Res> > rtQs;
+    std::vector<std::queue<IoLog> > rtQs;
     std::vector<PerformanceStatistics> stats;
     
     std::vector<std::future<void> > workers;

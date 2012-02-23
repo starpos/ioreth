@@ -22,8 +22,30 @@
 #include <fcntl.h>
 #include <linux/fs.h>
 
-/* (threadId, isWrite, resonse time) */
-typedef std::tuple<int, bool, double> Res;
+/**
+ * Each IO log.
+ */
+struct IoLog
+{
+    const unsigned int threadId;
+    const bool isWrite;
+    const size_t blockId;
+    const double startTime; /* unix time [second] */
+    const double response; /* [second] */
+
+    IoLog(unsigned int threadId_, bool isWrite_, size_t blockId_,
+          double startTime_, double response_)
+        : threadId(threadId_)
+        , isWrite(isWrite_)
+        , blockId(blockId_)
+        , startTime(startTime_)
+        , response(response_) {}
+
+    void print() {
+        ::printf("threadId %d isWrite %d blockId %10zu startTime %.06f response %.06f\n",
+                 threadId, isWrite, blockId, startTime, response);
+    }
+};
 
 static inline double getTime()
 {
