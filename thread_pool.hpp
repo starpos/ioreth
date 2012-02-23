@@ -24,7 +24,7 @@
  * A simple fixed-sized thread pool.
  * type T is of items which will be passed to worker threads.
  */
-namespace __thread_pool {
+namespace thread_pool {
 
 class ShouldStopException : public std::exception {};
 
@@ -162,7 +162,7 @@ protected:
     }
 };
 
-} // namespace __thread_pool
+} // namespace thread_pool
 
 /**
  * Simple thread pool with tasks of type T and
@@ -172,10 +172,10 @@ protected:
  * Use ThreadPoolWithId instead.
  */
 template<typename T>
-class ThreadPool : public __thread_pool::ThreadPoolBase<T>
+class ThreadPool : public thread_pool::ThreadPoolBase<T>
 {
 private:
-    typedef __thread_pool::ThreadPoolBase<T> TPB;
+    typedef thread_pool::ThreadPoolBase<T> TPB;
     std::function<void(T)> workerFunc_;
 
 public:
@@ -195,7 +195,7 @@ private:
         while (!TPB::shouldStop_) {
             try {
                 workerFunc_(TPB::dequeue());
-            } catch (__thread_pool::ShouldStopException& e) {
+            } catch (thread_pool::ShouldStopException& e) {
                 break;
             }
         }
@@ -208,10 +208,10 @@ private:
  * Wroker function can throw an exception and you can get it by get().
  */
 template<typename T>
-class ThreadPoolWithId : public __thread_pool::ThreadPoolBase<T>
+class ThreadPoolWithId : public thread_pool::ThreadPoolBase<T>
 {
 private:
-    typedef __thread_pool::ThreadPoolBase<T> TPB;
+    typedef thread_pool::ThreadPoolBase<T> TPB;
 
     std::mutex mutex_;
     std::condition_variable cv_;
@@ -283,7 +283,7 @@ private:
                 try {
                     workerFuncWithId_(TPB::dequeue(), id);
                     
-                } catch (__thread_pool::ShouldStopException& e) {
+                } catch (thread_pool::ShouldStopException& e) {
                     break;
                 }
             }
@@ -310,7 +310,7 @@ private:
 };
 
 
-namespace __thread_pool {
+namespace thread_pool {
 
 /**
  * Base class for Task to run by a thread in a thread pool.
@@ -337,7 +337,7 @@ private:
     TaskBase(const TaskBase& task) {}
 };
 
-} // namespace __thread_pool
+} // namespace thread_pool
 
 
 /**
@@ -352,10 +352,10 @@ private:
  * Do not call promise.get_future() to construct an instance.
  */
 template<typename T1, typename T2>
-class Task : public __thread_pool::TaskBase<T1, T2>
+class Task : public thread_pool::TaskBase<T1, T2>
 {
 private:
-    typedef __thread_pool::TaskBase<T1, T2> TB;
+    typedef thread_pool::TaskBase<T1, T2> TB;
     std::function<T2(T1)> func_;
     T1 arg_;
 public:
@@ -378,10 +378,10 @@ public:
  * Task class with T1, void.
  */
 template<typename T1>
-class Task<T1, void> : public __thread_pool::TaskBase<T1, void>
+class Task<T1, void> : public thread_pool::TaskBase<T1, void>
 {
 private:
-    typedef __thread_pool::TaskBase<T1, void> TB;
+    typedef thread_pool::TaskBase<T1, void> TB;
     std::function<void(T1)> func_;
     T1 arg_;
 public:
@@ -405,10 +405,10 @@ public:
  * Task class with void, T2.
  */
 template<typename T2>
-class Task<void, T2> : public __thread_pool::TaskBase<void, T2>
+class Task<void, T2> : public thread_pool::TaskBase<void, T2>
 {
 private:
-    typedef __thread_pool::TaskBase<void, T2> TB;
+    typedef thread_pool::TaskBase<void, T2> TB;
     std::function<T2()> func_;
 public:
     Task(const std::function<T2()>& func, std::promise<T2>&& promise)
@@ -429,10 +429,10 @@ public:
  * Task class with void, void.
  */
 template<>
-class Task<void, void> : public __thread_pool::TaskBase<void, void>
+class Task<void, void> : public thread_pool::TaskBase<void, void>
 {
 private:
-    typedef __thread_pool::TaskBase<void, void> TB;
+    typedef thread_pool::TaskBase<void, void> TB;
     std::function<void()> func_;
 public:
     Task(const std::function<void()>& func, std::promise<void>&& promise)
