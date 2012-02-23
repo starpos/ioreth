@@ -115,7 +115,8 @@ public:
         std::call_once(joinFlag_, [&]() {
                 std::for_each(workers_.begin(), workers_.end(), [](std::thread& th) {
                         th.join();
-                    }); });
+                    });
+            });
     }
 
 protected:
@@ -163,15 +164,23 @@ protected:
 
 } // namespace __thread_pool
 
+/**
+ * Simple thread pool with tasks of type T and
+ * worker function of type std::function<void(T)>.
+ *
+ * Currently worker function could not throw exceptions.
+ * Use ThreadPoolWithId instead.
+ */
 template<typename T>
 class ThreadPool : public __thread_pool::ThreadPoolBase<T>
 {
 private:
     typedef __thread_pool::ThreadPoolBase<T> TPB;
     std::function<void(T)> workerFunc_;
+
 public:
     ThreadPool(unsigned int poolSize, unsigned int queueSize,
-                        const std::function<void(T)>& workerFunc)
+               const std::function<void(T)>& workerFunc)
         : TPB(poolSize, queueSize)
         , workerFunc_(workerFunc) {
 
@@ -180,13 +189,12 @@ public:
     
     ~ThreadPool() throw() {}
 
+private:
     void do_work() throw() {
-         
-         while (!TPB::shouldStop_) {
-            
+
+        while (!TPB::shouldStop_) {
             try {
                 workerFunc_(TPB::dequeue());
-                
             } catch (__thread_pool::ShouldStopException& e) {
                 break;
             }
@@ -194,6 +202,11 @@ public:
     }
 };
 
+
+/**
+ * Simple thread pool with thread id and promise data.
+ * Wroker function can throw an exception and you can get it by get().
+ */
 template<typename T>
 class ThreadPoolWithId : public __thread_pool::ThreadPoolBase<T>
 {
@@ -201,43 +214,107 @@ private:
     typedef __thread_pool::ThreadPoolBase<T> TPB;
 
     std::mutex mutex_;
+    std::condition_variable cv_;
+    bool isInitialized_;
 
-    std::map<std::thread::id, unsigned int> idMap_;
     /* The second is thread id starting from 0. */
     std::function<void(T, unsigned int)> workerFuncWithId_;
+
+    std::map<std::thread::id, unsigned int> idMap_;
+    std::vector<std::promise<void> > promises_;
+    std::vector<std::future<void> > futures_;
+    
 public:
     ThreadPoolWithId(unsigned int poolSize, unsigned int queueSize,
                      const std::function<void(T, unsigned int)>& workerFuncWithId)
         : TPB(poolSize, queueSize)
-        , workerFuncWithId_(workerFuncWithId) {
+        , isInitialized_(false)
+        , workerFuncWithId_(workerFuncWithId)
+        , promises_(poolSize)
+        , futures_(poolSize) {
 
         TPB::init([&] { this->do_work(); });
         for (unsigned int i = 0; i < poolSize; i ++) {
-            idMap_[TPB::workers_[i].get_id()] = i;
+            auto tid = TPB::workers_[i].get_id();
+            idMap_[tid] = i;
+            futures_[i] = std::move(promises_[i].get_future());
         }
+        isInitialized_ = true;
+        cv_.notify_all();
     }
 
-    ~ThreadPoolWithId() throw() {}
-
-    void do_work() throw() {
+    ~ThreadPoolWithId() throw() {
         
-        while (!TPB::shouldStop_) {
-            try {
-                workerFuncWithId_(TPB::dequeue(), idMap_[std::this_thread::get_id()]);
-                
-            } catch (__thread_pool::ShouldStopException& e) {
-                break;
+        TPB::stop();
+        TPB::join();
+        
+        bool canThrow = false;
+        getDetail(canThrow);
+    }
+
+    /**
+     * Wait for all threads end.
+     * An exception will be thrown.
+     * You can call this mutliple times to get multiple exceptions.
+     * You need call this 'poolSize' times at most to get all exceptions.
+     */
+    void get() {
+
+        bool canThrow = true;
+        getDetail(canThrow);
+    }
+
+private:
+    void do_work() throw() {
+
+        auto tid = std::this_thread::get_id();
+        {
+            /* Wait for all threads created. */
+            std::unique_lock<std::mutex> lk(mutex_);
+            while (!isInitialized_) {
+                cv_.wait(lk);
             }
         }
+        /* Now idMap_, promises_, and futures_ is filled. */
+        unsigned int id = idMap_[tid];
+
+        try {
+            while (!TPB::shouldStop_) {
+                try {
+                    workerFuncWithId_(TPB::dequeue(), id);
+                    
+                } catch (__thread_pool::ShouldStopException& e) {
+                    break;
+                }
+            }
+            promises_[id].set_value();
+        } catch (...) {
+            promises_[id].set_exception(std::current_exception());
+        }
     }
 
+    void getDetail(bool canThrow) {
+        
+        std::for_each(futures_.begin(), futures_.end(), [&] (std::future<void>& f) {
+                if (f.valid()) {
+                    try {
+                        f.get();
+                    } catch (...) {
+                        if (canThrow) {
+                            std::rethrow_exception(std::current_exception());
+                        }
+                    }
+                }
+            });
+    }
+        
 #if 0
     void check(const std::string& s) {
 
         std::for_each(idMap_.begin(), idMap_.end(), [&](const std::pair<std::thread::id, unsigned int>& p) {
 
-                    std::lock_guard<std::mutex> lk(mutex_);
-                    std::cout << s << ": " << p.first << " i: " << p.second << std::endl;
+                std::lock_guard<std::mutex> lk(mutex_);
+                std::cout << s << ": " << p.first << " i: " << p.second << std::endl;
             });
     }
 #endif
@@ -384,6 +461,5 @@ public:
     }
     void get() { TB::future_.get(); }
 };
-
 
 #endif /* THREAD_POOL */
