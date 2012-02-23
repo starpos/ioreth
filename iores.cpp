@@ -61,7 +61,7 @@ public:
         : threadId_(threadId)
         , dev_(dev)
         , blockSize_(blockSize)
-        , accessRange_(accessRange)
+        , accessRange_(calcAccessRange(accessRange, blockSize, dev))
         , bufV_(nullptr)
         , buf_(nullptr)
         , rtQ_(rtQ)
@@ -76,6 +76,10 @@ public:
             throw e;
         }
         buf_ = static_cast<char*>(bufV_);
+        
+        for (size_t i = 0; i < blockSize_; i ++) {
+            buf_[i] = static_cast<char>(getRandomInt(256));
+        }
     }
     ~IoResponseBench() {
 
@@ -143,6 +147,15 @@ private:
 
         ::printf("id %d ", threadId_);
         stat_.put();
+    }
+
+    /**
+     * Helper function for constructor.
+     * Do not touch other members.
+     */
+    size_t calcAccessRange(size_t accessRange, size_t blockSize, BlockDevice& dev) {
+    
+        return (accessRange == 0) ? (dev.getDeviceSize() / blockSize) : accessRange;
     }
 };
 
@@ -281,9 +294,6 @@ void do_work(int threadId, const Options& opt, std::queue<Res>& rtQ, Performance
     const bool isDirect = true;
 
     BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
-    if (opt.getAccessRange() > 0) {
-        bd.setAccessRange(opt.getAccessRange() * opt.getBlockSize());
-    }
     
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
                           rtQ, stat, opt.isShowEachResponse());

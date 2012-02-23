@@ -48,16 +48,14 @@ private:
     const std::string name_;
     const Mode mode_;
     int fd_;
-    const off_t deviceSize_;
-    size_t accessRange_;
+    const size_t deviceSize_;
 
 public:
     BlockDevice(const std::string& name, const Mode mode, bool isDirect)
         : name_(name)
         , mode_(mode)
         , fd_(openDevice(name, mode, isDirect))
-        , deviceSize_(getDeviceSize())
-        , accessRange_(deviceSize_) {
+        , deviceSize_(getDeviceSizeFirst()) {
 #if 0
         ::printf("device %s size %zu mode %d isDirect %d\n",
                  name_.c_str(), size_, mode_, isDirect_);
@@ -67,11 +65,9 @@ public:
         : name_(std::move(bd.name_))
         , mode_(bd.mode_)
         , fd_(bd.fd_)
-        , deviceSize_(bd.deviceSize_)
-        , accessRange_(bd.accessRange_){
+        , deviceSize_(bd.deviceSize_) {
 
         bd.fd_ = -1;
-        bd.accessRange_ = 0;
     }
     
     ~BlockDevice() {
@@ -82,18 +78,20 @@ public:
         }
     }
 
-    void setAccessRange(off_t accessRange) {
+    /**
+     * Get device size [byte].
+     */
+    size_t getDeviceSize() const {
 
-        if (accessRange <= deviceSize_) {
-            accessRange_ = accessRange;
-        } else if (accessRange > deviceSize_) {
-            accessRange_ = deviceSize_;
-        }
+        return deviceSize_;
     }
-    
+
+    /**
+     * Read data and fill a buffer.
+     */
     void read(off_t oft, size_t size, char* buf) {
 
-        if (accessRange_ < oft + size) { throw std::string("range error."); }
+        if (deviceSize_ < oft + size) { throw std::string("range error."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
@@ -105,9 +103,12 @@ public:
             s += ret;
         }
     }
+    /**
+     * Write data of a buffer.
+     */
     void write(off_t oft, size_t size, char* buf) {
 
-        if (accessRange_ < oft + size) { throw std::string("range error."); }
+        if (deviceSize_ < oft + size) { throw std::string("range error."); }
         if (mode_ == READ_MODE) { throw std::string("write is not permitted."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
@@ -153,9 +154,9 @@ private:
      * Helper function for constructor.
      * Get device size in bytes.
      */
-    off_t getDeviceSize() const {
+    size_t getDeviceSizeFirst() const {
 
-        off_t ret;
+        size_t ret;
         struct stat s;
         if (::fstat(fd_, &s) < 0) {
             std::stringstream ss;
