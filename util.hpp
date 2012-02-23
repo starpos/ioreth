@@ -173,8 +173,9 @@ private:
         } else {
             ret = s.st_size;
         }
-        
+#if 0        
         std::cout << "devicesize: " << ret << std::endl; //debug
+#endif
         return ret;
     }
 };
