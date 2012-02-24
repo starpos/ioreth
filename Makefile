@@ -20,7 +20,7 @@ clean: cleanTest
 	rm -f iores ioth *.o
 
 # for test.
-test_thread_pool: test_thread_pool.o
+sample_thread_pool: sample_thread_pool.o
 	$(CXX) $(CFLAGS) -o $@ $<
 
 cleanTest:
