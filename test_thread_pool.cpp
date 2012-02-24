@@ -71,11 +71,11 @@ size_t testThreadPoolOverhead(
     ThreadPool<int> threadPool(nDequeueThreads, workQueueSize, counter);
 
     std::vector<std::thread> workers;
-    volatile bool shouldStop = false;
+    std::atomic<bool> shouldStop(false);
     for (int i = 0; i < nEnqueThreads; i ++) {
 
         std::thread th([&]{
-                while (!shouldStop) {
+                while (!shouldStop.load()) {
                     threadPool.submit(0);
                 }
             });
@@ -83,7 +83,7 @@ size_t testThreadPoolOverhead(
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(runPeriodMs));
-    shouldStop = true;
+    shouldStop.store(true);
 
     std::for_each(workers.begin(), workers.end(), [](std::thread& th) {
             th.join();
@@ -117,18 +117,18 @@ void testCounterWithCas(int nThreads, size_t runPeriod)
 {
     // Performance of counter with CAS.
     std::atomic<size_t> count(0);
-    volatile bool shouldStop = false;
+    std::atomic<bool> shouldStop(false);
     std::vector<std::thread> threads;
     threads.reserve(nThreads);
     threads.push_back(std::move(std::thread([&] {
                     size_t s;
-                    while (!shouldStop) {
+                    while (!shouldStop.load()) {
                         s = count;
                         count.compare_exchange_strong(s, s + 1);
                     }
                 })));
     std::this_thread::sleep_for(std::chrono::seconds(runPeriod));
-    shouldStop = true;
+    shouldStop.store(true);
     
     std::for_each(threads.begin(), threads.end(), [](std::thread& th) {
             th.join();
@@ -143,15 +143,15 @@ void testCounterWithCas(int nThreads, size_t runPeriod)
  */
 void testCounter(size_t runPeriod)
 {
-    volatile bool shouldStop = false;
+    std::atomic<bool> shouldStop(false);
     size_t s = 0;
     std::thread th([&] {
-            while (!shouldStop) {
+            while (!shouldStop.load()) {
                 s ++;
             }
         });
     std::this_thread::sleep_for(std::chrono::seconds(runPeriod));
-    shouldStop = true;
+    shouldStop.store(true);
     th.join();
     printf("testCounter %zu in %zu secs (%zu num/s)\n", s, runPeriod, s / runPeriod);
 }
@@ -159,6 +159,7 @@ void testCounter(size_t runPeriod)
 
 int main()
 {
+#if 0
     {
         testCounter(3);
         testCounterWithCas(1, 3);
@@ -169,7 +170,8 @@ int main()
     {
         testThreadPoolWithTask();
     }
-#if 0
+#endif
+#if 1
     {
         for (int i = 0; i < 1; i ++) {
             for (int j = 0; j < 4; j ++) {
@@ -184,6 +186,7 @@ int main()
         }
     }
 #endif
+#if 0
     {
         int nEnq = 1;
         int nDeq = 1;
@@ -196,5 +199,6 @@ int main()
     {
         testThreadPoolWithId();
     }
+#endif
     return 0;
 }

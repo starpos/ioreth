@@ -186,16 +186,16 @@ public:
                 this->doWork(blockId, id);
             });
         
-        volatile bool shouldStop = false;
+        std::atomic<bool> shouldStop(false);
         std::thread th([&] {
                 size_t blockId = startBlockId;
-                while (!shouldStop) {
+                while (!shouldStop.load()) {
                     threadPool.submit(blockId);
                     blockId ++;
                 }
             });
         std::this_thread::sleep_for(std::chrono::seconds(runPeriodInSec));
-        shouldStop = true;
+        shouldStop.store(true);
         th.join();
         threadPool.flush(); threadPool.stop(); threadPool.join();
         putAllStats();

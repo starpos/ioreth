@@ -32,8 +32,8 @@ template<typename T>
 class ThreadPoolBase
 {
 protected:
-    volatile bool shouldStop_;
-    volatile bool canSubmit_;
+    bool shouldStop_;
+    std::atomic<bool> canSubmit_;
     
     const unsigned int poolSize_;
     const unsigned int queueSize_;
@@ -71,7 +71,7 @@ public:
      */
     bool submit(T task) {
 
-        if (canSubmit_) {
+        if (canSubmit_.load()) {
             return enqueue(task);
         } else {
             return false;
@@ -87,13 +87,13 @@ public:
      */
     bool flush() {
 
-        canSubmit_ = false;
+        canSubmit_.store(false);
         std::unique_lock<std::mutex> lk(mutex_);
         while (!waitQ_.empty() && !shouldStop_) {
             cv_.wait(lk);
         }
         if (shouldStop_) { return false; }
-        canSubmit_ = true;
+        canSubmit_.store(true);
         cv_.notify_all();
         return true;
     }
