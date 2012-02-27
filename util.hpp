@@ -11,9 +11,11 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <exception>
+#include <cerrno>
+#include <cstdio>
 
 #include <unistd.h>
-#include <errno.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -121,14 +123,15 @@ public:
      */
     void read(off_t oft, size_t size, char* buf) {
 
-        if (deviceSize_ < oft + size) { throw std::string("range error."); }
+        if (deviceSize_ < oft + size) { throw std::runtime_error("range error."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
             ssize_t ret = ::read(fd_, &buf[s], size - s);
             if (ret < 0) {
-                std::string e("read failed");
-                ::perror(e.c_str()); throw e;
+                std::string e("read failed: ");
+                e += strerror(errno);
+                throw std::runtime_error(e);
             }
             s += ret;
         }
@@ -138,16 +141,16 @@ public:
      */
     void write(off_t oft, size_t size, char* buf) {
 
-        if (deviceSize_ < oft + size) { throw std::string("range error."); }
-        if (mode_ == READ_MODE) { throw std::string("write is not permitted."); }
+        if (deviceSize_ < oft + size) { throw std::runtime_error("range error."); }
+        if (mode_ == READ_MODE) { throw std::runtime_error("write is not permitted."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
-
             ssize_t ret = ::write(fd_, &buf[s], size - s);
             if (ret < 0) {
-                std::string e("write failed");
-                ::perror(e.c_str()); throw e;
+                std::string e("write failed: ");
+                e += strerror(errno);
+                throw std::runtime_error(e);
             }
             s += ret;
         }
@@ -175,7 +178,7 @@ private:
             std::stringstream ss;
             ss << "open failed: " << name_
                << " " << ::strerror(errno) << ".";
-            throw ss.str();
+            throw std::runtime_error(ss.str());
         }
         return fd;
     }
@@ -191,14 +194,14 @@ private:
         if (::fstat(fd_, &s) < 0) {
             std::stringstream ss;
             ss << "fstat failed: " << name_ << " " << ::strerror(errno) << ".";
-            throw ss.str();
+            throw std::runtime_error(ss.str());
         }
         if ((s.st_mode & S_IFMT) == S_IFBLK) {
             size_t size;
             if (::ioctl(fd_, BLKGETSIZE64, &size) < 0) {
                 std::stringstream ss;
                 ss << "ioctl failed: " << name_ << " " << ::strerror(errno) << ".";
-                throw ss.str();
+                throw std::runtime_error(ss.str());
             }
             ret = size;
         } else {

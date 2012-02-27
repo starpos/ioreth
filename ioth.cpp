@@ -74,10 +74,10 @@ public:
             return;
         }
         if (args_.size() != 1 || blockSize_ == 0) {
-            throw std::string("specify blocksize (-b), and device.");
+            throw std::runtime_error("specify blocksize (-b), and device.");
         }
         if (period_ == 0 && count_ == 0) {
-            throw std::string("specify period (-p) or count (-c).");
+            throw std::runtime_error("specify period (-p) or count (-c).");
         }
     }
 
@@ -191,8 +191,7 @@ private:
             , blockSize_(blockSize) {
 
             if(::posix_memalign((void **)&buf_, blockSize, blockSize) != 0) {
-                std::string e("posix_memalign failed");
-                throw e;
+                throw std::runtime_error("posix_memalign failed");
             }
         }
         explicit ThreadLocalData(ThreadLocalData&& rhs)
@@ -425,9 +424,9 @@ int main(int argc, char* argv[])
             execExperiment(opt);
         }
         
-    } catch (const std::string& e) {
+    } catch (const std::runtime_error& e) {
 
-        ::printf("error: %s\n", e.c_str());
+        ::printf("error: %s\n", e.what());
     } catch (...) {
 
         ::printf("caught another error.\n");
