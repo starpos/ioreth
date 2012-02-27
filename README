@@ -1,7 +1,7 @@
-iores
-A simple benchmark to measure IO response time with random access.
-
+ioreth
+A simple IO benchmark to measure response and throughput.
 
 Usage
 > make
 > ./iores -h
+> ./ioth -h

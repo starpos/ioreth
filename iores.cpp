@@ -347,7 +347,7 @@ void execExperiment(const Options& opt)
     assert(rtQs.size() == nthreads);
     std::for_each(rtQs.begin(), rtQs.end(), pop_and_show_rtQ);
 
-    PerformanceStatistics stat = mergeStats(stats);
+    PerformanceStatistics stat = mergeStats(stats.begin(), stats.end());
     ::printf("---------------\n"
              "all %zu ", nthreads);
     stat.put();

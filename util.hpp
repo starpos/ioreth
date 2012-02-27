@@ -67,10 +67,10 @@ enum Mode
 class BlockDevice
 {
 private:
-    const std::string name_;
-    const Mode mode_;
+    std::string name_;
+    Mode mode_;
     int fd_;
-    const size_t deviceSize_;
+    size_t deviceSize_;
 
 public:
     BlockDevice(const std::string& name, const Mode mode, bool isDirect)
@@ -83,13 +83,21 @@ public:
                  name_.c_str(), size_, mode_, isDirect_);
 #endif
     }
-    explicit BlockDevice(BlockDevice&& bd)
-        : name_(std::move(bd.name_))
-        , mode_(bd.mode_)
-        , fd_(bd.fd_)
-        , deviceSize_(bd.deviceSize_) {
+    explicit BlockDevice(BlockDevice&& rhs)
+        : name_(std::move(rhs.name_))
+        , mode_(rhs.mode_)
+        , fd_(rhs.fd_)
+        , deviceSize_(rhs.deviceSize_) {
 
-        bd.fd_ = -1;
+        rhs.fd_ = -1;
+    }
+    BlockDevice& operator=(BlockDevice&& rhs) {
+
+        name_ = std::move(rhs.name_);
+        mode_ = rhs.mode_;
+        fd_ = rhs.fd_; rhs.fd_ = -1;
+        deviceSize_= rhs.deviceSize_;
+        return *this;
     }
     
     ~BlockDevice() {
@@ -244,22 +252,22 @@ public:
     }
 };
 
-static inline
-PerformanceStatistics mergeStats(std::vector<PerformanceStatistics>& stats)
+template<typename T> //T is iterator type of PerformanceStatistics.
+static inline PerformanceStatistics mergeStats(const T begin, const T end)
 {
     double total = 0;
     double max = -1.0;
     double min = -1.0;
     size_t count = 0;
 
-    std::for_each(stats.begin(), stats.end(), [&](PerformanceStatistics& stat) {
+    std::for_each(begin, end, [&](PerformanceStatistics& stat) {
 
             total += stat.getTotal();
             if (max < 0 || max < stat.getMax()) { max = stat.getMax(); }
             if (min < 0 || min > stat.getMin()) { min = stat.getMin(); }
             count += stat.getCount();
         });
-
+    
     return PerformanceStatistics(total, max, min, count);
 }
 
