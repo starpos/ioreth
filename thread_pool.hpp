@@ -290,6 +290,7 @@ private:
             promises_[id].set_value();
         } catch (...) {
             promises_[id].set_exception(std::current_exception());
+            TPB::stop();
         }
     }
 
