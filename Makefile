@@ -13,8 +13,8 @@ ioth: ioth.o
 .cpp.o:
 	$(CXX) $(CFLAGS) -c $<
 
-iores.o: iores.cpp util.hpp
-ioth.o: ioth.cpp util.hpp thread_pool.hpp
+iores.o: iores.cpp util.hpp ioreth.hpp
+ioth.o: ioth.cpp util.hpp ioreth.hpp thread_pool.hpp
 
 clean: cleanTest
 	rm -f iores ioth *.o
