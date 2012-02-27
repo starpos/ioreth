@@ -2,3 +2,8 @@
 *.o
 iores
 ioth
+sample_thread_pool
+GPATH
+GRTAGS
+GSYMS
+GTAGS
