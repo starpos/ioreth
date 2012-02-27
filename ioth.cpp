@@ -306,20 +306,15 @@ public:
                           //if errors have been occurred.
     }
     
-    /**
-     * Put all statistics.
-     */
-    void putAllStats() {
+    PerformanceStatistics getStat(unsigned int id) {
 
-        for (unsigned int i = 0; i < threadLocal_.size(); i ++) {
-            ::printf("threadId %u ", i);
-            threadLocal_[i].getPerformanceStatistics().put();
-        }
-        auto li = getStatsList();
-        auto stat = mergeStats(li.begin(), li.end());
+        return threadLocal_[id].getPerformanceStatistics();
+    }
+
+    PerformanceStatistics getMergedStat() {
         
-        ::printf("threadId all ");
-        stat.put();
+        auto li = getStatsList();
+        return mergeStats(li.begin(), li.end());
     }
 
     /**
@@ -382,17 +377,19 @@ private:
     }
 };
 
-
 void execExperiment(const Options& opt)
 {
     const unsigned int taskQueueLength = 128;
     IoThroughputBench bench(opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
                             opt.getNthreads(), taskQueueLength, opt.isShowEachResponse());
+    double begin, end;
+    begin = getTime();
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod(), opt.getStartBlockId());
     } else {
         bench.execNtimes(opt.getCount(), opt.getStartBlockId());
     }
+    end = getTime();
 
     /* print each IO log. */
     if (opt.isShowEachResponse()) {
@@ -405,8 +402,17 @@ void execExperiment(const Options& opt)
             }
         }
     }
-    
-    bench.putAllStats();
+
+    /* Print statistics. */
+    for (unsigned int id = 0; id < opt.getNthreads(); id ++) {
+
+        ::printf("threadId %u ", id);
+        bench.getStat(id).print();
+    }
+    auto stat = bench.getMergedStat();
+    ::printf("threadId all ");
+    stat.print();
+    printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
 
 int main(int argc, char* argv[])

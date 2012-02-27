@@ -248,7 +248,7 @@ public:
 
     double getAverage() const { return total_ / (double)count_; }
 
-    void put() const {
+    void print() const {
         ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
                  getTotal(), getCount(), getAverage(),
                  getMax(), getMin());
@@ -272,6 +272,49 @@ static inline PerformanceStatistics mergeStats(const T begin, const T end)
         });
     
     return PerformanceStatistics(total, max, min, count);
+}
+
+/**
+ * Convert throughput data to string.
+ */
+static inline
+std::string getDataThroughputString(double throughput)
+{
+    const double GIGA = static_cast<double>(1000ULL * 1000ULL * 1000ULL);
+    const double MEGA = static_cast<double>(1000ULL * 1000ULL);
+    const double KILO = static_cast<double>(1000ULL);
+    
+    std::stringstream ss;
+    if (throughput > GIGA) {
+        throughput /= GIGA;
+        ss << throughput << " GB/sec";
+    } else if (throughput > MEGA) {
+        throughput /= MEGA;
+        ss << throughput << " MB/sec";
+    } else if (throughput > KILO) {
+        throughput /= KILO;
+        ss << throughput << " KB/sec";
+    } else {
+        ss << throughput << " B/sec";
+    }
+    
+    return ss.str();
+}
+
+
+/**
+ * Print throughput data.
+ * @blockSize block size [bytes].
+ * @nio Number of IO executed.
+ * @periodInSec Elapsed time [second].
+ */
+static inline
+void printThroughput(size_t blockSize, size_t nio, double periodInSec)
+{
+    double throughput = static_cast<double>(blockSize * nio) / periodInSec;
+    double iops = static_cast<double>(nio) / periodInSec;
+    ::printf("Throughput: %.3f B/s %s %.3f iops.\n",
+             throughput, getDataThroughputString(throughput).c_str(), iops);
 }
 
 #endif /* UTIL_HPP */

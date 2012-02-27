@@ -144,7 +144,7 @@ private:
         std::lock_guard<std::mutex> lk(mutex_);
 
         ::printf("id %d ", threadId_);
-        stat_.put();
+        stat_.print();
     }
 
     /**
@@ -340,8 +340,11 @@ void execExperiment(const Options& opt)
     std::vector<PerformanceStatistics> stats;
     
     std::vector<std::future<void> > workers;
+    double begin, end;
+    begin = getTime();
     worker_start(workers, nthreads, opt, rtQs, stats);
     worker_join(workers);
+    end = getTime();
 
     assert(rtQs.size() == nthreads);
     std::for_each(rtQs.begin(), rtQs.end(), pop_and_show_rtQ);
@@ -349,7 +352,8 @@ void execExperiment(const Options& opt)
     PerformanceStatistics stat = mergeStats(stats.begin(), stats.end());
     ::printf("---------------\n"
              "all %zu ", nthreads);
-    stat.put();
+    stat.print();
+    printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
 
 int main(int argc, char* argv[])
