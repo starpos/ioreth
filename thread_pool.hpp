@@ -32,18 +32,19 @@ template<typename T>
 class ThreadPoolBase
 {
 protected:
-    bool shouldStop_;
-    std::atomic<bool> canSubmit_;
-    
     const unsigned int poolSize_;
     const unsigned int queueSize_;
 
     std::mutex mutex_;
-    std::condition_variable cv_;
+    std::condition_variable cvEmpty_; // wait for empty -> not empty.
+    std::condition_variable cvFull_;  // wait for full -> not full.
+    std::condition_variable cvFlush_; // wait for not empty -> empty.
+    bool shouldStop_; // protected by the mutex.
+    std::queue<T> waitQ_; // protected by the mutex.
 
-    std::queue<T> waitQ_;
     std::vector<std::thread> workers_;
 
+    std::atomic<bool> canSubmit_;
     std::once_flag joinFlag_;
 
 public:
@@ -53,10 +54,10 @@ public:
      * @queueSize Maximum length of queue.
      */
     ThreadPoolBase(unsigned int poolSize, unsigned int queueSize)
-        : shouldStop_(false)
-        , canSubmit_(true)
-        , poolSize_(poolSize)
-        , queueSize_(queueSize) {}
+        : poolSize_(poolSize)
+        , queueSize_(queueSize)
+        , shouldStop_(false)
+        , canSubmit_(true)  {}
     
     virtual ~ThreadPoolBase() throw() {
 
@@ -90,12 +91,10 @@ public:
         canSubmit_.store(false);
         std::unique_lock<std::mutex> lk(mutex_);
         while (!waitQ_.empty() && !shouldStop_) {
-            cv_.wait(lk);
+            cvFlush_.wait(lk);
         }
-        if (shouldStop_) { return false; }
         canSubmit_.store(true);
-        cv_.notify_all();
-        return true;
+        return !shouldStop_;
     }
 
     /**
@@ -103,8 +102,11 @@ public:
      */
     void stop() {
 
+        std::unique_lock<std::mutex> lk(mutex_);
         shouldStop_ = true;
-        cv_.notify_all();
+        cvEmpty_.notify_all();
+        cvFull_.notify_all();
+        cvFlush_.notify_all();
     }
 
     /**
@@ -135,14 +137,15 @@ protected:
         std::unique_lock<std::mutex> lk(mutex_);
 
         while (waitQ_.size() >= queueSize_ && !shouldStop_) {
-            cv_.wait(lk);
+            cvFull_.wait(lk);
         }
         if (shouldStop_) {
             return false;
+        } else {
+            cvEmpty_.notify_one();
+            waitQ_.push(task);
+            return true;
         }
-        waitQ_.push(task);
-        cv_.notify_all();
-        return true;
     }
 
     T dequeue() {
@@ -150,15 +153,17 @@ protected:
         std::unique_lock<std::mutex> lk(mutex_);
 
         while (waitQ_.empty() && !shouldStop_) {
-            cv_.wait(lk);
+            cvEmpty_.wait(lk);
         }
         if (shouldStop_) {
             throw ShouldStopException();
+        } else {
+            cvFull_.notify_one();
+            T task = waitQ_.front();
+            waitQ_.pop();
+            if (waitQ_.empty()) { cvFlush_.notify_all(); }
+            return task;
         }
-        T task = waitQ_.front();
-        waitQ_.pop();
-        cv_.notify_all();
-        return task;
     }
 };
 
@@ -239,8 +244,11 @@ public:
             idMap_[tid] = i;
             futures_[i] = std::move(promises_[i].get_future());
         }
-        isInitialized_ = true;
-        cv_.notify_all();
+        {
+            std::unique_lock<std::mutex> lk(mutex_);
+            isInitialized_ = true;
+            cv_.notify_all();
+        }
     }
 
     ~ThreadPoolWithId() throw() {
