@@ -3,5 +3,5 @@ A simple IO benchmark to measure response and throughput.
 
 Usage
 > make
-> ./iores -h
-> ./ioth -h
+> ./iores -h # to measure response.
+> ./ioth -h  # to measure throughput.
