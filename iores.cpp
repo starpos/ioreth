@@ -5,8 +5,6 @@
  */
 #define _FILE_OFFSET_BITS 64
 
-#define IORES_VERSION "1.0"
-
 #include <iostream>
 #include <vector>
 #include <string>
@@ -31,6 +29,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include "ioreth.hpp"
 #include "util.hpp"
 
 class IoResponseBench
@@ -252,7 +251,7 @@ public:
 
     void showVersion() {
 
-        ::printf("iores version %s\n", IORES_VERSION);
+        ::printf("iores version %s\n", IORETH_VERSION);
     }
     
     void showHelp() {
