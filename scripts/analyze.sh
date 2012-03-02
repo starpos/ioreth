@@ -1,6 +1,6 @@
 #!/bin/sh
 
-DEBUG=1
+DEBUG=0
 
 teee()
 {
@@ -42,19 +42,30 @@ get_response()
 
 get_histogram()
 {
-  local width=0.001 #sec
+  local d=$1 #directory
+  local width=$2 #sec
   #threadId 0 isWrite 0 blockId      38775 startTime 1330336299.661363 response 0.008008
-  for d in ./seq/*/*/*/; do
-    echo ${d}
-    cat ${d}/*/res \
+  cat ${d}/*/res \
 |grep '^threadId' \
 |teee 1 |filter.py -g 1,2 -r 'threadId' '[0-9]+' \
 |teee 2 |project.py -g 10 \
 |teee 3 |./histogram.py ${width} \
 |teee 4 > ${d}/histogram_${width}
+}
+
+get_all_histograms()
+{
+  local d
+  local width
+  for d in ./seq/*/*/*/ ./rnd/*/*/*/; do
+    for width in 0.0001 0.001 0.01; do
+      echo $d $width
+      get_histogram $d $width
+    done
   done
 }
 
 #get_throughput > throughput.plot
 #get_response > response.plot
-#get_histogram
+get_all_histograms
+#get_histogram ./seq/read/4/32768 0.001
