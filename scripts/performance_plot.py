@@ -87,7 +87,7 @@ class PerformancePlot:
     k1 = (pattern, blockSize)
     def pred(rec):
       #print "rec: ", rec.show() #debug
-      k2 = Key(rec, ['pattern', 'blockSize']).raw()
+      k2 = rec.getKey(['pattern', 'blockSize']).raw()
       #print "(k1,k2): ", (k1,k2) #debug
       return k1 == k2
     #print "rel: ", rel.show() #debug

@@ -30,3 +30,18 @@ def s2u(size):
     c += 1
     size /= 1024
   return str(size) + ['', 'k', 'm', 'g', 't', 'p'][c]
+
+def gplus(g0, g1):
+  """
+  Concatinate two iterable objects.
+
+  g0 :: iter(a)
+  g1 :: iter(a)
+  return :: generator(a)
+  a :: any
+  
+  """
+  for a in g0:
+    yield a
+  for b in g1:
+    yield b

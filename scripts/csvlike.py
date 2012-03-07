@@ -33,5 +33,5 @@ class CsvLike(Relation):
     def getRawRecGenerator():
       for line in lineGenerator:
         yield tuple(line.rstrip().split(sep))
-    Relation.__init__(self, schema, getRawRecGenerator(), isTmp=False)
+    Relation.__init__(self, schema, getRawRecGenerator(), reuse=True)
 

@@ -13,7 +13,8 @@ from histogram_plot import *
 
 def doMain():
 
-  widths = ['0.00001', '0.0001', '0.001'] # 10us, 100us, 1ms
+  nThreadss = [1, 2, 4, 8, 12, 16, 24, 32]
+  widths = ['0.0001', '0.001', '0.01'] # 10us, 100us, 1ms
   patternMap = {'rnd':'random', 'seq':'sequential'}
   params = [(pattern, mode, bsU)
             for (pattern, mode) in [('rnd', 'read'), ('rnd', 'write'), ('rnd', 'mix'),
@@ -28,14 +29,16 @@ def doMain():
       yield (Decimal(rec[0]), int(rec[1]))
 
   for pattern, mode, bsU in params:
-    for width in widths:
-      fn = './%s/%s/%s/histogram_%s' % (pattern, mode, str(util.u2s(bsU)), width)
-      title = 'Histogram with %s %s, blocksize %s, width %s' % (patternMap[pattern], mode, bsU, width)
-      output = '%s_%s_bs%s_w%s' % (pattern, mode, bsU, width)
-      f = open(fn)
-      hp = HistogramPlot(histogramG(f), width, title, output)
-      hp.plot()
-      f.close()
+    for nth in nThreadss:
+      for width in widths:
+        fn = './%s/%s/%d/%s/histogram_%s' % (pattern, mode, nth, str(util.u2s(bsU)), width)
+        title = 'Histogram with %s %s, blocksize %s, nThreads %d, width %s' % \
+            (patternMap[pattern], mode, bsU, nth, width)
+        output = './histogram/histogram_%s_%s_bs%s_th%d_w%s.png' % (pattern, mode, bsU, nth, width)
+        f = open(fn)
+        hp = HistogramPlot(histogramG(f), width, title, output)
+        hp.plot()
+        f.close()
   
 if __name__ == "__main__":
   doMain()

@@ -30,7 +30,7 @@ class HistogramPlot:
     
     """
     assert(type(histogramG) is types.GeneratorType)
-    assert(isinstance(titl, str) and Decimal(width) > 0.0)
+    assert(isinstance(width, str) and Decimal(width) > 0.0)
     assert(isinstance(title, str))
     assert(isinstance(output, str))
     self.__histogramG = histogramG
@@ -68,7 +68,7 @@ class HistogramPlot:
     g('set terminal png')
     g('set logscale y')
     g('set xrange [0:%f]' % (Decimal(width) * 100))
-    g('set yrange [1:*]')
+    g('set yrange [0.9:*]')
     g('set output "%s"' % output)
     g.plot(plot)
 
