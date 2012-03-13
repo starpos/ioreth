@@ -384,10 +384,14 @@ void execExperiment(const Options& opt)
                             opt.getNthreads(), taskQueueLength, opt.isShowEachResponse());
     double begin, end;
     begin = getTime();
-    if (opt.getPeriod() > 0) {
-        bench.execNsecs(opt.getPeriod(), opt.getStartBlockId());
-    } else {
-        bench.execNtimes(opt.getCount(), opt.getStartBlockId());
+    try {
+        if (opt.getPeriod() > 0) {
+            bench.execNsecs(opt.getPeriod(), opt.getStartBlockId());
+        } else {
+            bench.execNtimes(opt.getCount(), opt.getStartBlockId());
+        }
+    } catch (const BlockDevice::EofError& e) {
+        ::printf("EofError.\n");
     }
     end = getTime();
 

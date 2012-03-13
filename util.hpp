@@ -118,12 +118,14 @@ public:
         return deviceSize_;
     }
 
+    class EofError : public std::exception {};
+    
     /**
      * Read data and fill a buffer.
      */
     void read(off_t oft, size_t size, char* buf) {
 
-        if (deviceSize_ < oft + size) { throw std::runtime_error("range error."); }
+        if (deviceSize_ < oft + size) { throw EofError(); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
         while (s < size) {
@@ -141,7 +143,7 @@ public:
      */
     void write(off_t oft, size_t size, char* buf) {
 
-        if (deviceSize_ < oft + size) { throw std::runtime_error("range error."); }
+        if (deviceSize_ < oft + size) { throw EofError(); }
         if (mode_ == READ_MODE) { throw std::runtime_error("write is not permitted."); }
         ::lseek(fd_, oft, SEEK_SET);
         size_t s = 0;
