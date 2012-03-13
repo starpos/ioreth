@@ -1,5 +1,9 @@
-ioreth version 1.2
+ioreth version 1.2.1
 A simple IO benchmark to measure response and throughput.
+
+Required
+* x86_64 Linux environment.
+* gcc-4.6.2 or later.
 
 Usage
 > make
