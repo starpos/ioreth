@@ -410,7 +410,8 @@ void execExperiment(const Options& opt)
         bench.getStat(id).print();
     }
     auto stat = bench.getMergedStat();
-    ::printf("threadId all ");
+    ::printf("----------------\n"
+             "all ");
     stat.print();
     printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }

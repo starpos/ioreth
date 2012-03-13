@@ -351,7 +351,7 @@ void execExperiment(const Options& opt)
 
     PerformanceStatistics stat = mergeStats(stats.begin(), stats.end());
     ::printf("---------------\n"
-             "all %zu ", nthreads);
+             "all ");
     stat.print();
     printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
