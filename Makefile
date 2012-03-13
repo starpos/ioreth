@@ -1,7 +1,7 @@
 .PHONY: iores ioth clean
 
 CXX = g++
-CFLAGS = -Wall -O2 -std=c++0x -pthread
+CFLAGS = -Wall -O2 -std=c++0x -pthread -D_GLIBCXX_USE_NANOSLEEP
 
 all: iores ioth
 
