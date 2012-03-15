@@ -272,6 +272,27 @@ public:
         getDetail(canThrow);
     }
 
+    /**
+     * Wait until a time point or all threads done.
+     */
+    void waitUntil(const std::chrono::monotonic_clock::time_point& time) {
+
+        std::for_each(futures_.begin(), futures_.end(), [&] (std::future<void>& f) {
+                f.wait_until(time);
+            });
+    }
+
+    /**
+     * Wait for a timeout period or all threads done.
+     */
+    void waitFor(const std::chrono::monotonic_clock::duration& period) {
+
+        auto time = std::chrono::monotonic_clock::now() + period;
+        std::for_each(futures_.begin(), futures_.end(), [&] (std::future<void>& f) {
+                f.wait_until(time);
+            });
+    }
+
 private:
     void do_work() throw() {
 

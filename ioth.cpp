@@ -283,7 +283,7 @@ public:
      * @startBlockId Start block id [block].
      */
     void execNsecs(size_t runPeriodInSec, size_t startBlockId) {
-
+        
         ThreadPoolWithId<size_t> threadPool(
             nThreads_, taskQueueLength_,
             [&](size_t blockId, unsigned int id) {
@@ -298,7 +298,7 @@ public:
                     blockId ++;
                 }
             });
-        std::this_thread::sleep_for(std::chrono::seconds(runPeriodInSec));
+        threadPool.waitFor(std::chrono::seconds(runPeriodInSec));
         shouldStop.store(true);
         th.join();
         threadPool.flush(); threadPool.stop(); threadPool.join();
@@ -327,6 +327,8 @@ public:
 
 private:
     /**
+     * Execute an IO.
+     *
      * @blockId block id [block]
      * @id Thread id (starting from 0).
      */
@@ -379,7 +381,7 @@ private:
 
 void execExperiment(const Options& opt)
 {
-    const unsigned int taskQueueLength = 128;
+    const unsigned int taskQueueLength = 128; /* magic number... */
     IoThroughputBench bench(opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
                             opt.getNthreads(), taskQueueLength, opt.isShowEachResponse());
     double begin, end;
