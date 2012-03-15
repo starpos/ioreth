@@ -1,6 +1,6 @@
 #/usr/bin/env python
 
-__all__ = ['PerformancePlot']
+__all__ = ['PerformancePlot', 'plotPerformanceData']
 
 import sys
 import os
@@ -11,6 +11,7 @@ import Gnuplot
 
 from relation import *
 from csvlike import *
+import util
 
 class PerformancePlot:
   """
@@ -130,4 +131,25 @@ class PerformancePlot:
     g('set yrange[0:*]')
     g('set output "%s"' % outputFileName)
     g.plot(*plotData)
+
+
+def plotPerformanceData(csvLike, titleTemplate, outputTemplate, targetColumn, ylabel,
+                        patternMap, keyPairs):
+  """
+  """
+  assert(isinstance(csvLike, CsvLike))
+  assert(isinstance(titleTemplate, str))
+  assert(isinstance(outputTemplate, str))
+  assert(isinstance(targetColumn, str))
+  assert(isinstance(ylabel, str))
+  assert(isinstance(patternMap, dict))
+  assert(isinstance(keyPairs, list))
+  
+  for pattern, blockSizeU in keyPairs:
+    title = titleTemplate % (patternMap[pattern], blockSizeU)
+    output = outputTemplate % (pattern, blockSizeU)
+    blockSizeS = str(util.u2s(blockSizeU))
+    rp = PerformancePlot(csvLike, pattern, blockSizeS, targetColumn, ylabel, title, output)
+    rp.plot()
+
 

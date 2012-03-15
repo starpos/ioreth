@@ -14,9 +14,10 @@ teee()
 
 get_throughput() 
 {
+  local resdir=$1 #res directory.
   #echo Bps iops seq/rnd read/write/mix nThreads blockSize iter #3
   echo "#pattern mode nThreads blockSize Bps iops" #5
-  grep ^Throughput: ./*/*/*/*/*/res \
+  grep ^Throughput: $resdir/*/*/*/*/*/res \
 |teee 1 |map.py -g 1 -f "lambda x: x.split('/')" \
 |teee 2 |project.py -g 2,6,9,10,11,12,13 \
 |teee 3 |groupby.py -g 3,4,5,6 -v 1,2 \
@@ -26,10 +27,11 @@ get_throughput()
 
 get_response()
 {
+  local resdir=$1 #res directory
   echo "#pattern mode nThreads blockSize response"
-  grep "^threadId all" ./*/*/*/*/*/res \
+  grep "^threadId all" $resdir/*/*/*/*/*/res \
 |sed 's/threadId all//' > 1.$$
-  grep "^all" ./*/*/*/*/*/res \
+  grep "^all" $resdir/*/*/*/*/*/res \
 |sed 's/all[ ]\+[0-9]\+//' > 2.$$
   cat 1.$$ 2.$$ \
 |teee 1 |map.py -g 1 -f "lambda x: x.split('/')" \
@@ -55,9 +57,10 @@ get_histogram()
 
 get_all_histograms()
 {
+  local resdir=$1
   local d
   local width
-  for d in ./seq/*/*/*/ ./rnd/*/*/*/; do
+  for d in $resdir/*/*/*/*/; do
     for width in 0.0001 0.001 0.01; do
       echo $d $width
       get_histogram $d $width
@@ -67,5 +70,5 @@ get_all_histograms()
 
 #get_throughput > throughput.plot
 #get_response > response.plot
-get_all_histograms
+#get_all_histograms
 #get_histogram ./seq/read/4/32768 0.001
