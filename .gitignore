@@ -3,6 +3,7 @@
 iores
 ioth
 sample_thread_pool
+*.pyc
 GPATH
 GRTAGS
 GSYMS
