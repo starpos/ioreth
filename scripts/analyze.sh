@@ -51,7 +51,7 @@ get_histogram()
 |grep '^threadId' \
 |teee 1 |filter.py -g 1,2 -r 'threadId' '[0-9]+' \
 |teee 2 |project.py -g 10 \
-|teee 3 |./histogram.py ${width} \
+|teee 3 |histogram.py ${width} \
 |teee 4 > ${d}/histogram_${width}
 }
 

@@ -7,6 +7,7 @@ import os
 import re
 import time
 import itertools
+from decimal import Decimal
 import Gnuplot
 
 from relation import *
@@ -21,7 +22,8 @@ class PerformancePlot:
     GroupedRelations :: [(mode :: (str,), plot :: Relation)]
   
   """
-  def __init__(self, rel, pattern, blockSize, target, ylabel, title='', output='output.png'):
+  def __init__(self, rel, pattern, blockSize, target, ylabel, title='', output='output.png',
+               scale=Decimal(1.0), xRange='*:*', yRange='0:*'):
     """
     rel :: Relation
     pattern :: str
@@ -33,6 +35,12 @@ class PerformancePlot:
     title :: str
     output :: str
       Output file name.
+    scale :: Decimal
+      Scale of the plot data.
+    xRange :: str
+      xrange.
+    yRange :: str
+      yrange.
     
     """
     assert(isinstance(rel, Relation))
@@ -42,6 +50,9 @@ class PerformancePlot:
     assert(isinstance(ylabel, str))
     assert(isinstance(title, str))
     assert(isinstance(output, str))
+    assert(isinstance(scale, Decimal))
+    assert(isinstance(xRange, str))
+    assert(isinstance(yRange, str))
     self.__rel = rel
     self.__pattern = pattern
     self.__blockSize = blockSize
@@ -49,6 +60,9 @@ class PerformancePlot:
     self.__ylabel = ylabel
     self.__title = title
     self.__output = output
+    self.__scale = scale
+    self.__xrange = xRange
+    self.__yrange = yRange
 
   def plot(self):
     """
@@ -57,13 +71,14 @@ class PerformancePlot:
     """
     #print "relation size: ", self.__rel.size(), self.__pattern, self.__blockSize #debug
     groupedRelations = self.__filterAndGroupByMode(
-      self.__rel, self.__pattern, self.__blockSize, self.__target)
+      self.__rel, self.__pattern, self.__blockSize, self.__target, self.__scale)
     #print "groupedRelations: ", len(groupedRelations) #debug
     plotData = self.__toPlotData(groupedRelations)
     #print "plotData: ", plotData #debug
-    self.__doPlot(plotData, self.__output, self.__title, self.__ylabel)
+    self.__doPlot(plotData, self.__output, self.__title, self.__ylabel,
+                  self.__xrange, self.__yrange)
 
-  def __filterAndGroupByMode(self, rel, pattern, blockSize, target):
+  def __filterAndGroupByMode(self, rel, pattern, blockSize, target, scale=Decimal(1.0)):
     """
     Get plot data for 'number of threads' vs 'response time'.
 
@@ -76,10 +91,14 @@ class PerformancePlot:
         Number of threads. (This is X axis.)
       blockSize :: int
         Block size [bytes].
-      'target' :: Decimal
-        Something to plot. (This is Y axis.)
+      'target' :: str
+        Column name of data. (This is Y axis.)
     pattern :: str
     blockSize :: str(int)
+    target :: str
+        Target column name.
+    scale :: Decimal
+      Scale of the Y data.
 
     return :: GroupedRelations
       Schema of each relation: (nThreads, target)
@@ -94,9 +113,14 @@ class PerformancePlot:
     #print "rel: ", rel.show() #debug
     rel2 = rel.filter(pred)
     #print "rel2: ", rel2.show() #debug
-    rel3 = rel2.groupbyAsRelation(['mode'], ['nThreads', target])
-    #print "rel3: ", rel3 #debug
-    return rel3
+    def mapper((pattern, mode, nThreads, blockSize, target)):
+      return (pattern, mode, nThreads, blockSize, str(Decimal(target) * Decimal(scale)))
+    cols = ['pattern', 'mode', 'nThreads', 'blockSize', target]
+    rel3 = rel2.map(cols, cols, mapper)
+    #print "rel3: ", rel3.show() #debug
+    rel4 = rel3.groupbyAsRelation(['mode'], ['nThreads', target])
+    #print "rel4: ", rel4 #debug
+    return rel4
 
   def __toPlotData(self, groupedRelation):
     """
@@ -112,13 +136,16 @@ class PerformancePlot:
         Gnuplot.PlotItems.Data(rel.getL(), with_="lp", title=','.join(rawKey)))
     return plots
 
-  def __doPlot(self, plotData, outputFileName, title, ylabel):
+  def __doPlot(self, plotData, outputFileName, title, ylabel,
+               xRange='*:*', yRange='0:*'):
     """
     plotData :: [Gnuplot.PlotItems.Data]
     outputFileName :: str
     title :: str
     ylabel :: str
       Label of Y axis.
+    xRange :: str
+    yRange :: yRange
     return :: None
     
     """
@@ -128,13 +155,15 @@ class PerformancePlot:
     g.ylabel(ylabel)
     g('set key top left')
     g('set terminal png')
-    g('set yrange[0:*]')
+    g('set xrange [%s]' % xRange)
+    g('set yrange [%s]' % yRange)
     g('set output "%s"' % outputFileName)
     g.plot(*plotData)
 
 
 def plotPerformanceData(csvLike, titleTemplate, outputTemplate, targetColumn, ylabel,
-                        patternMap, keyPairs):
+                        patternMap, keyPairs, scale=Decimal(1.0), xRange='*:*', yRange='0:*'):
+                        
   """
   """
   assert(isinstance(csvLike, CsvLike))
@@ -144,12 +173,15 @@ def plotPerformanceData(csvLike, titleTemplate, outputTemplate, targetColumn, yl
   assert(isinstance(ylabel, str))
   assert(isinstance(patternMap, dict))
   assert(isinstance(keyPairs, list))
+  assert(isinstance(scale, Decimal))
+  assert(isinstance(xRange, str))
+  assert(isinstance(yRange, str))
   
   for pattern, blockSizeU in keyPairs:
     title = titleTemplate % (patternMap[pattern], blockSizeU)
     output = outputTemplate % (pattern, blockSizeU)
     blockSizeS = str(util.u2s(blockSizeU))
-    rp = PerformancePlot(csvLike, pattern, blockSizeS, targetColumn, ylabel, title, output)
+    rp = PerformancePlot(csvLike, pattern, blockSizeS, targetColumn, ylabel, title, output,
+                         scale, xRange, yRange)
     rp.plot()
-
 

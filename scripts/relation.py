@@ -435,6 +435,18 @@ class Relation:
         yield mapper(rec.getKey(colsFrom).raw())
     return Relation(colsTo, g(), name=name, reuse=reuse)
 
+  def mapR(self, colsTo, mapper, name=None, reuse=False):
+    """
+    colsTo :: [str]
+        Result schema.
+    mapper :: Record -> rawRec
+    
+    """
+    def g():
+      for rec in self.getRecG():
+        yield mapper(rec)
+    return Relation(colsTo, g(), name=name, reuse=reuse)
+
   def mapG(self, mapper, colsFrom=None):
     """
     mapper :: rawRec -> a

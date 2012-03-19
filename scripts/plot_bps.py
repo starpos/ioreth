@@ -5,6 +5,7 @@ import os
 import re
 import time
 import itertools
+from decimal import Decimal
 import Gnuplot
 
 import util
@@ -32,9 +33,10 @@ def doMain():
   
   titleTemplate = 'Throughput with pattern %s, blocksize %s'
   targetColumn = 'Bps'
-  ylabel = 'Throughput [bytes/sec]'
+  ylabel = 'Throughput [MB/sec]'
 
-  plotPerformanceData(c, titleTemplate, outputTemplate, targetColumn, ylabel, patternMap, pairs)
+  plotPerformanceData(c, titleTemplate, outputTemplate, targetColumn, ylabel, patternMap, pairs,
+                      scale=Decimal('1')/Decimal('1000000'), xRange='*:*', yRange='0:5000')
   f.close()
 
 if __name__ == "__main__":

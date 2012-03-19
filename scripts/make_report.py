@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
 """
-
+Make report template with mediawiki format from a parameter file.
 
 """
 
 import sys
 import os
 
-from param import *
 from relation import *
+from util import *
 
 def createTableStr1(headerX, itemMatrix):
     """
@@ -83,7 +83,7 @@ def createTableStr2(headerX, headerY, itemMatrix):
         + end()
 
 
-def renderStatistics(f, chartTypes, patterns, blockSizeUs, prefix=''):
+def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], prefixes=[''], widthPx=640, heightPx=(640 * 3 / 4)):
     """
     f :: file
        file object to write rendered text.
@@ -91,11 +91,15 @@ def renderStatistics(f, chartTypes, patterns, blockSizeUs, prefix=''):
         chart types like 'res', 'iops', 'bps'.
     patterns :: [str]
         pattern like 'rnd', 'seq'.
-    blockSIzeUs :: [str]
+    blockSizeUs :: [str]
         block size with unit like '512', '4k', '32k', '256k'.
-    prefix :: str
-        prefix of filepath.
+    names :: [str]
+        list of name.
+    prefixes :: [str]
+        list of prefix of filepath
     return :: None
+
+    len(names) == len(prefixes) is required.
     
     """
     #paramsStat = getParamsRelForStatistics()
@@ -120,9 +124,11 @@ def renderStatistics(f, chartTypes, patterns, blockSizeUs, prefix=''):
         matrix = []
         for bsU in paramsY:
             line = []
-            line.append('[[%s%s_%s_bs%s.png|width=%dpx|height=%dpx]]' % (prefix, chartType, pattern, bsU, 640, 640 * 3 / 4))
+            for prefix in prefixes:
+                line.append('[[%s%s_%s_bs%s.png|width=%dpx|height=%dpx]]' % \
+                                (prefix, chartType, pattern, bsU, widthPx, heightPx))
             matrix.append(line)
-        print >>f, createTableStr2([mapperC(paramC)], map(mapperY, paramsY), matrix)
+        print >>f, createTableStr2(names, map(mapperY, paramsY), matrix)
         
     #print createTableStr2(map(mapperX, paramsX), map(mapperY, paramsY), matrix)
 
@@ -184,12 +190,10 @@ def renderHistogram(f, patternModes, blockSizeUs, nThreadss, widths, prefix=''):
     #print createTableStr2(paramsX, paramsY, matrix)
     #paramsHist = getParamsRelForHistogram()
 
-def renderIorethReport(f, exprName, params, goals=None, settings=None, conclusion=None):
+def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
     """
     Render ioreth report in mediawiki format.
     
-    exprName :: str
-        Experiment name like '20120227a'
     params :: dict(paramName :: str, [str] | [(str, str)])
         Parameter data.
     goals :: str
@@ -200,6 +204,23 @@ def renderIorethReport(f, exprName, params, goals=None, settings=None, conclusio
         Conclusion text in mediawiki format.
     
     """
+    exprName = params['exprName']
+    nameList = params['nameList']
+    statisticsDirList = params['statisticsDirectories']
+    if 'histogramDirectory' in params:
+        histogramDir = params['histogramDirectory']
+    else:
+        histogramDir = None
+
+    if 'widthPx' in params:
+        widthPx = int(params['widthPx'])
+    else:
+        widthPx = 640
+    if 'heightPx' in params:
+        heightPx = int(params['heightPx'])
+    else:
+        heightPx = widthPx * 3 / 4
+        
     print >>f, '== %s ==' % exprName
     print >>f, '== Goals =='
 
@@ -220,51 +241,33 @@ def renderIorethReport(f, exprName, params, goals=None, settings=None, conclusio
     widthList = params['widthList']
 
     print >>f, '=== Performance Statistics ==='
-    
     renderStatistics(f, chartTypeList, patternList,
                      blockSizeUnitList,
-                     prefix='%s/charts/' % exprName)
+                     names=nameList,
+                     prefixes=map(lambda x: '%s/' % x, statisticsDirList),
+                     widthPx=widthPx, heightPx=heightPx)
 
-    print >>f, '=== Response Histogram ==='
-
-    renderHistogram(f, patternModeList, blockSizeUnitList,
-                    nThreadsList, widthList,
-                    prefix=('%s/histogram/' % exprName))
+    if histogramDir is not None:
+        print >>f, '=== Response Histogram ==='
+        renderHistogram(f, patternModeList, blockSizeUnitList,
+                        nThreadsList, widthList,
+                        prefix='%s/' % histogramDir)
     
     print >>f, '== Conclusion =='
     if conclusion is not None:
         print >>f, conclusion
 
-def getParams(fileName):
-    """
-    fileName :: str
-        parameter file name.
-
-    params :: dict(paramName :: str, [str] | [(str, str)])
-        Parameter data.
-    
-    """
-    f = open(fileName, 'r')
-    s = ''
-    for line in f:
-        s += line
-    f.close()
-    params = eval(s)
-    return params
-        
 def doMain():
 
     if len(sys.argv) == 1:
-        print "Specify expreiment name and prepare parameter file."
+        print "Usage %s [param file]" % sys.argv[0]
         exit(1)
 
-    paramName = sys.argv[1]
-    paramFileName = '%s.param' % paramName
-    wikiFileName = '%s.mediawiki' % paramName
-        
+    paramFileName = sys.argv[1]
     params = getParams(paramFileName)
+    wikiFileName = params['exprName'] + '.mediawiki'
     f = open(wikiFileName, 'w')
-    renderIorethReport(f, paramName, params)
+    renderIorethReport(f, params)
     f.close()
 
 if __name__ == '__main__':
