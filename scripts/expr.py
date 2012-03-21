@@ -66,21 +66,6 @@ class Params:
     def storeEachLog(self):
         return self.get('storeEachLog')
 
-    def optR(self):
-        if self.storeEachLog():
-            return '-r'
-        else:
-            return ''
-
-    def cmdStr(self, pattern, mode, nThreads, bsU):
-        assert(isinstance(pattern, str))
-        assert(isinstance(mode, str))
-        assert(isinstance(bsU, str))
-        assert(isinstance(nThreads, int))
-        return "%s -b %d -p %d -t %d %s %s %s" % \
-            (self.binary(pattern), util.u2s(bsU), self.runPeriod(),
-             nThreads, self.optR(), self.optMode(mode),
-             self.targetDevice())
 
     
 class Command(Params):
@@ -91,10 +76,11 @@ class Command(Params):
         
         self.setPattern('rnd')
         self.setMode('read')
-        self.setRunPeriod(1)
-        self.setTargetDevice('/dev/ioreth_test_device')
         self.setNThreads(1)
         self.setBsU('4k')
+        self.setRunPeriod(Params.runPeriod(self))
+        self.setTargetDevice(Params.targetDevice(self))
+        self.setStoreEachLog(Params.storeEachLog(self))
 
     def clone(self):
 
@@ -122,6 +108,8 @@ class Command(Params):
         return self.__bsU
     def bs(self):
         return self.__bs
+    def storeEachLog(self):
+        return self.__storeEachLog
     
     def setPattern(self, pattern):
         assert(pattern == 'seq' or pattern == 'rnd')
@@ -150,6 +138,10 @@ class Command(Params):
         assert(isinstance(util.u2s(bsU), int))
         self.__bsU = bsU
         self.__bs = util.u2s(bsU)
+    
+    def setStoreEachLog(self, storeEachLog):
+        assert(isinstance(storeEachLog, bool))
+        self.__storeEachLog = storeEachLog
 
     def optMode(self, mode):
         return {'read':'', 'write':'-w', 'mix':'-m'}[mode]
@@ -157,6 +149,12 @@ class Command(Params):
     def binary(self, pattern):
         return {'seq':self.ioth(), 'rnd':self.iores()}[pattern]
         
+    def optR(self):
+        if self.storeEachLog():
+            return '-r'
+        else:
+            return ''
+
     def cmdStr(self):
         return "%s -b %d -p %d -t %d %s %s %s" % \
             (self.binary(self.pattern()), self.bs(), self.runPeriod(),
@@ -192,12 +190,14 @@ def runExpr(params):
                 print cmdStr #debug
 
                 cmdWarmup = cmd.clone()
-                cmdWarmup.setRunPeriod(1)
+                #cmdWarmup.setRunPeriod(1)
                 totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
                 os.system(totalCmd)
                 
                 for loop in xrange(0, cmd.nLoop()):
                     resDirPath = cmd.resDirPath(loop)
+                    if not os.path.exists(resDirPath):
+                        os.makedirs(resDirPath)
                     totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
                     print totalCmd #debug
                     os.system(totalCmd)
