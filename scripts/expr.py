@@ -198,7 +198,12 @@ def runExpr(params):
                     resDirPath = cmd.resDirPath(loop)
                     if not os.path.exists(resDirPath):
                         os.makedirs(resDirPath)
-                    totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
+                    if loop == 0:
+                        cmdTmp = cmd.clone()
+                        cmdTmp.setStoreEachLog(True)
+                        totalCmd = "%s > %s/res" % (cmdTmp.cmdStr(), resDirPath)
+                    else:
+                        totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
                     print totalCmd #debug
                     os.system(totalCmd)
     
