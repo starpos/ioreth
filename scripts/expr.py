@@ -4,8 +4,11 @@ import os
 import sys
 import util
 
-
 class Params:
+    """
+    Parameters for experiments.
+    
+    """
 
     def __init__(self, params):
         self.checkParams(params)
@@ -69,6 +72,10 @@ class Params:
 
     
 class Command(Params):
+    """
+    Experiment command generator.
+    
+    """
 
     def __init__(self, params):
 
@@ -169,6 +176,10 @@ class Command(Params):
 
 
 def runExpr(params):
+    """
+    Generate and execute commands using given parameters.
+    
+    """
 
     p = Params(params)
     
