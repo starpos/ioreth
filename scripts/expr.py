@@ -4,74 +4,9 @@ import os
 import sys
 import util
 
-class Params:
-    """
-    Parameters for experiments.
-    
-    """
+from param import *
 
-    def __init__(self, params):
-        self.checkParams(params)
-        self.__params = params
-
-    def checkParams(self, params):
-        assert(isinstance(params, dict))
-
-        assert('iores' in params)
-        assert(isinstance(params['iores'], str))
-        assert('ioth' in params)
-        assert(isinstance(params['ioth'], str))
-        assert('targetDevice' in params)
-        assert(isinstance(params['targetDevice'], str))
-        assert('patternModeList' in params)
-        assert(isinstance(params['patternModeList'], list))
-        assert('nLoop' in params)
-        assert(isinstance(params['nLoop'], int))
-        assert('runPeriod' in params)
-        assert(isinstance(params['runPeriod'], int))
-        assert('nThreadsList' in params)
-        assert(isinstance(params['nThreadsList'], list))
-        assert('blockSizeUnitList' in params)
-        assert(isinstance(params['blockSizeUnitList'], list))
-        assert('storeEachLog' in params)
-        assert(isinstance(params['storeEachLog'], bool))
-    
-    def get(self, key):
-        return self.__params[key]
-
-    def getParams(self):
-        return self.__params
-
-    def iores(self):
-        return self.get('iores')
-
-    def ioth(self):
-        return self.get('ioth')
-
-    def targetDevice(self):
-        return self.get('targetDevice')
-
-    def nLoop(self):
-        return self.get('nLoop')
-
-    def patternModeList(self):
-        return self.get('patternModeList')
-
-    def runPeriod(self):
-        return self.get('runPeriod')
-
-    def nThreadsList(self):
-        return self.get('nThreadsList')
-
-    def bsUList(self):
-        return self.get('blockSizeUnitList')
-
-    def storeEachLog(self):
-        return self.get('storeEachLog')
-
-
-    
-class Command(Params):
+class Command(ParamsForExpr):
     """
     Experiment command generator.
     
@@ -79,15 +14,15 @@ class Command(Params):
 
     def __init__(self, params):
 
-        Params.__init__(self, params)
+        ParamsForExpr.__init__(self, params)
         
         self.setPattern('rnd')
         self.setMode('read')
         self.setNThreads(1)
         self.setBsU('4k')
-        self.setRunPeriod(Params.runPeriod(self))
-        self.setTargetDevice(Params.targetDevice(self))
-        self.setStoreEachLog(Params.storeEachLog(self))
+        self.setRunPeriod(ParamsForExpr.runPeriod(self))
+        self.setTargetDevice(ParamsForExpr.targetDevice(self))
+        self.setStoreEachLog(ParamsForExpr.storeEachLog(self))
 
     def clone(self):
 
@@ -100,7 +35,6 @@ class Command(Params):
         cmd.setBsU(self.bsU())
         return cmd
         
-
     def pattern(self):
         return self.__pattern
     def mode(self):
@@ -175,52 +109,51 @@ class Command(Params):
             (self.pattern(), self.mode(), self.nThreads(), self.bs(), loop)
 
 
-def runExpr(params):
+def runExpr(rawParams):
     """
     Generate and execute commands using given parameters.
     
     """
-
-    p = Params(params)
+    cmdOrig = Command(rawParams)
     
-    cmd = Command(params)
-    
-    for pattern, mode in p.patternModeList():
-        for nThreads in p.nThreadsList():
-            assert(isinstance(nThreads, int))
-            for bsU in p.bsUList():
-                assert(isinstance(bsU, str))
+    for pattern, mode, nThreads, bsU in cmdOrig.paramIter():
+        assert(isinstance(pattern, str))
+        assert(isinstance(mode, str))
+        assert(isinstance(nThreads, int))
+        assert(isinstance(bsU, str))
 
-                cmd = Command(params)
-                cmd.setPattern(pattern)
-                cmd.setMode(mode)
-                cmd.setNThreads(nThreads)
-                cmd.setBsU(bsU)
-                cmdStr = cmd.cmdStr()
+        cmd = cmdOrig.clone()
+        cmd.setPattern(pattern)
+        cmd.setMode(mode)
+        cmd.setNThreads(nThreads)
+        cmd.setBsU(bsU)
+        cmdStr = cmd.cmdStr()
+        print cmdStr #debug
 
-                print cmdStr #debug
+        cmdWarmup = cmd.clone()
+        #cmdWarmup.setRunPeriod(1)
+        totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
+        os.system(totalCmd)
 
-                cmdWarmup = cmd.clone()
-                #cmdWarmup.setRunPeriod(1)
-                totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
-                os.system(totalCmd)
-                
-                for loop in xrange(0, cmd.nLoop()):
-                    resDirPath = cmd.resDirPath(loop)
-                    if not os.path.exists(resDirPath):
-                        os.makedirs(resDirPath)
-                    if loop == 0:
-                        cmdTmp = cmd.clone()
-                        cmdTmp.setStoreEachLog(True)
-                        totalCmd = "%s > %s/res" % (cmdTmp.cmdStr(), resDirPath)
-                    else:
-                        totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
-                    print totalCmd #debug
-                    os.system(totalCmd)
+        for loop in xrange(0, cmd.nLoop()):
+            resDirPath = cmd.resDirPath(loop)
+            if not os.path.exists(resDirPath):
+                os.makedirs(resDirPath)
+            if loop == 0:
+                cmdTmp = cmd.clone()
+                cmdTmp.setStoreEachLog(True)
+                totalCmd = "%s > %s/res" % (cmdTmp.cmdStr(), resDirPath)
+            else:
+                totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
+            print totalCmd #debug
+            os.system(totalCmd)
     
 def main():
-    params = util.getParams(sys.argv[1])
-    runExpr(params)
+    rawParams = util.getParams(sys.argv[1])
+    try:
+        runExpr(rawParams)
+    except ParamsException, msg:
+        print msg
 
 if __name__ == '__main__':
     main()

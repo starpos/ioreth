@@ -10,6 +10,7 @@ import os
 
 from relation import *
 from util import *
+from param import *
 
 def createTableStr1(headerX, itemMatrix):
     """
@@ -83,7 +84,8 @@ def createTableStr2(headerX, headerY, itemMatrix):
         + end()
 
 
-def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], prefixes=[''], widthPx=640, heightPx=(640 * 3 / 4)):
+def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], prefixes=[''],
+                     template='%s_%s_bs%s.png', widthPx=640, heightPx=(640 * 3 / 4)):
     """
     f :: file
        file object to write rendered text.
@@ -97,6 +99,13 @@ def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], pr
         list of name.
     prefixes :: [str]
         list of prefix of filepath
+    template :: str
+        chart file name template with placeholders
+        for chatType, pattern, and blockSizeUnit.
+    widthPx :: int
+        chart width in pixel in the table.
+    heightPx :: int
+        chart height in pixel in the table.
     return :: None
 
     len(names) == len(prefixes) is required.
@@ -125,15 +134,20 @@ def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], pr
         for bsU in paramsY:
             line = []
             for prefix in prefixes:
-                line.append('[[%s%s_%s_bs%s.png|width=%dpx|height=%dpx]]' % \
-                                (prefix, chartType, pattern, bsU, widthPx, heightPx))
+                fileName = template % (chartType, pattern, bsU)
+                item = '[[%s%s|width=%dpx|height=%dpx]]' % \
+                    (prefix, fileName, widthPx, heightPx)
+                line.append(item)
+                            
             matrix.append(line)
         print >>f, createTableStr2(names, map(mapperY, paramsY), matrix)
         
     #print createTableStr2(map(mapperX, paramsX), map(mapperY, paramsY), matrix)
 
 
-def renderHistogram(f, patternModeList, bsUList, nThreadsList, widthList, prefix=''):
+def renderHistogram(f, patternModeList, bsUList, nThreadsList, widthList,
+                    prefix='', template='histogram_%s_%s_bs%s_th%s_w%s.png',
+                    widthPx=240, heightPx=(240 * 3 / 4)):
     """
     f :: file
     patternModeList :: [(pattern :: str, mode :: str)]
@@ -147,6 +161,13 @@ def renderHistogram(f, patternModeList, bsUList, nThreadsList, widthList, prefix
         bins' width of response histogram in second like '0.01', '0.001'.
     prefix :: str
         prefix of filename.
+    template :: str
+        chart file name tempalte with placeholders for
+        pattern, mode, bsU, nThreads, and width.
+    widthPx :: int
+        chart width in pixel in the table.
+    heightPx :: int
+        chart height in pixel in the table.
     return :: None
         
     """
@@ -182,8 +203,10 @@ def renderHistogram(f, patternModeList, bsUList, nThreadsList, widthList, prefix
             for nThreads in paramsY2:
                 line = []
                 for width in paramsX0:
-                    line.append('[[%shistogram_%s_%s_bs%s_th%s_w%s.png|width=%dpx|height=%dpx]]'
-                                % (prefix, pattern, mode, bsU, nThreads, width, 240, 240 * 3 / 4))
+                    fileName = template % \
+                        (pattern, mode, bsU, nThreads, width)
+                    line.append('[[%s%s|width=%dpx|height=%dpx]]'
+                                % (prefix, fileName, widthPx, heightPx))
                 matrix.append(line)
         print >>f, createTableStr2(paramsX, paramsY, matrix)
 
@@ -194,7 +217,7 @@ def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
     """
     Render ioreth report in mediawiki format.
     
-    params :: dict(paramName :: str, [str] | [(str, str)])
+    params :: Params
         Parameter data.
     goals :: str
         Goals text in mediawiki format.
@@ -204,22 +227,13 @@ def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
         Conclusion text in mediawiki format.
     
     """
-    exprName = params['exprName']
-    nameList = params['nameList']
-    statisticsDirList = params['statisticsDirectories']
-    if 'histogramDirectory' in params:
-        histogramDir = params['histogramDirectory']
-    else:
-        histogramDir = None
-
-    if 'widthPx' in params:
-        widthPx = int(params['widthPx'])
-    else:
-        widthPx = 640
-    if 'heightPx' in params:
-        heightPx = int(params['heightPx'])
-    else:
-        heightPx = widthPx * 3 / 4
+    exprName = params.exprName()
+    nameList = params.nameList()
+    statisticsDirList = params.statisticsDirectories()
+    histogramDir = params.histogramDirectory()
+    
+    widthPx = params.widthPx(default=640)
+    heightPx = params.heightPx(default=widthPx * 3 / 4)
         
     print >>f, '== %s ==' % exprName
     print >>f, '== Goals =='
@@ -233,25 +247,32 @@ def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
 
     print >>f, '== Results =='
 
-    chartTypeList = params['chartTypeList']
-    patternList = params['patternList']
-    blockSizeUnitList = params['blockSizeUnitList']
-    patternModeList = params['patternModeList']
-    nThreadsList = params['nThreadsList']
-    widthList = params['widthList']
+    chartTypeList = params.chartTypeList()
+    patternList = params.patternList()
+    blockSizeUnitList = params.blockSizeUnitList()
+    patternModeList = params.patternModeList()
+    nThreadsList = params.nThreadsList()
+    widthList = params.widthList()
 
+    sTemplate = params.statisticsChartFileNameTemplate(
+        default='%s_%s_bs%s.png')
+    hTemplate = params.histogramChartFileNameTemplate(
+        default='histogram_%s_%s_bs%s_th%s_w%s.png')
+    
     print >>f, '=== Performance Statistics ==='
     renderStatistics(f, chartTypeList, patternList,
                      blockSizeUnitList,
                      names=nameList,
                      prefixes=map(lambda x: '%s/' % x, statisticsDirList),
+                     template=sTemplate,
                      widthPx=widthPx, heightPx=heightPx)
 
     if histogramDir is not None:
         print >>f, '=== Response Histogram ==='
         renderHistogram(f, patternModeList, blockSizeUnitList,
                         nThreadsList, widthList,
-                        prefix='%s/' % histogramDir)
+                        prefix='%s/' % histogramDir,
+                        template=hTemplate)
     
     print >>f, '== Conclusion =='
     if conclusion is not None:
@@ -264,8 +285,14 @@ def doMain():
         exit(1)
 
     paramFileName = sys.argv[1]
-    params = getParams(paramFileName)
-    wikiFileName = params['exprName'] + '.mediawiki'
+    rawParams = getParams(paramFileName)
+    try:
+        params = ParamsForReport(rawParams)
+    except ParamsException, msg:
+        print msg
+        exit(1)
+    
+    wikiFileName = params.exprName() + '.mediawiki'
     f = open(wikiFileName, 'w')
     renderIorethReport(f, params)
     f.close()

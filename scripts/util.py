@@ -1,6 +1,6 @@
 #/usr/bin/env python
 
-__all__ = ['u2s', 's2u', 'gplus', 'getParams']
+__all__ = ['u2s', 's2u', 'gplus']
 
 import re
 
@@ -46,19 +46,3 @@ def gplus(g0, g1):
   for b in g1:
     yield b
     
-def getParams(fileName):
-    """
-    fileName :: str
-        parameter file name.
-
-    params :: dict(paramName :: str, [str] | [(str, str)])
-        Parameter data.
-    
-    """
-    f = open(fileName, 'r')
-    s = ''
-    for line in f:
-        s += line
-    f.close()
-    params = eval(s)
-    return params
