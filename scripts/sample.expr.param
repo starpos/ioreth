@@ -6,11 +6,10 @@
     'runPeriod': 20,
     'storeEachLog': False,
     'chartTypeList': ['res', 'iops', 'bps'],
-    'patternList': ['rnd', 'seq'],
     'blockSizeUnitList': ['512', '4k'],
     'patternModeList': [(pattern, mode) for (pattern, mode) in
                         [('rnd', 'read'), ('rnd', 'write'), ('rnd', 'mix'),
                          ('seq', 'read'), ('seq', 'write')]],
     'nThreadsList': [1, 2, 4, 8],
-    'widthList': ['0.0001', '0.001', '0.01'] # 10us, 100us, 1ms
+    'DUMMY': None
 }

@@ -1,0 +1,23 @@
+{
+    'plotFileList': ['plot.plug-per-req.mem/throughput.plot', 'plot.plug-per-plug.mem/throughput.plot'],
+    'outDirList': ['plot.plug-per-req.mem/png', 'plot.plug-per-plug.mem/png'],
+    'outFileParams.old': [(pattern, bsU, yRange) for (pattern, bsU, yRange) in
+                      [('rnd', '512',  '0:0.2'),
+                       ('rnd', '4k',   '0:0.4'),
+                       ('rnd', '32k',  '0:2.0'),
+                       ('rnd', '256k', '0:20.0'),
+                       ('seq', '512',  '0:0.1'),
+                       ('seq', '4k',   '0:0.1'),
+                       ('seq', '32k',  '0:0.2'),
+                       ('seq', '256k', '0:3.0')]],
+    'outFileTemplate': 'bps_%s_bs%s.png',
+    'outFileParams': [(pattern, bsU, yRange)
+                      for pattern in ['rnd', 'seq']
+                      for bsU in ['512', '4k', '32k', '256k']
+                      for yRange in [None]],
+    'titleTemplate': 'Throughput with pattern %s, blocksize %s',
+    'targetColumn': 'Bps',
+    'yLabel': 'Throughput [MB/sec]',
+    'scale': '1/1000000',
+    'DUMMY': None
+}

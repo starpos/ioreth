@@ -1,0 +1,26 @@
+{
+    'titleName': '20120321a',
+    'blockSizeUnitList': ['512', '4k'],
+
+    'isPlotStat': True,
+    'statNameList': ['baseline', 'param1', 'param2'],
+    'statDirList': ['baselineDir', 'param1Dir', 'param2Dir'],
+    #'statChartFileTemplate': r'%s_%s_bs%s.png',
+    'chartTypeList': ['res', 'iops', 'bps'],
+    'patternList': ['rnd', 'seq'],
+    #'statWidthPx': 320,
+    #'statHeightPx': 240,
+
+    'isPlotHistogram': True,
+    'histogramDir': 'histogramDir',
+    'patternModeList': [(pattern, mode) for (pattern, mode) in
+                        [('rnd', 'read'), ('rnd', 'write'), ('rnd', 'mix'),
+                         ('seq', 'read'), ('seq', 'write')]],
+    'nThreadsList': [1, 2, 4, 8],
+    #'histogramChartFileTemplate': r'histogram_%s_%s_bs%s_th%s_w%s.png',
+    'widthList': ['0.0001', '0.001', '0.01'],
+    #'histogramWidthPx': 240,
+    #'histogramHeightPx': 180,
+
+    'DUMMY': None
+}

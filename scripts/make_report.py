@@ -227,15 +227,10 @@ def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
         Conclusion text in mediawiki format.
     
     """
-    exprName = params.exprName()
-    nameList = params.nameList()
-    statisticsDirList = params.statisticsDirectories()
-    histogramDir = params.histogramDirectory()
-    
-    widthPx = params.widthPx(default=640)
-    heightPx = params.heightPx(default=widthPx * 3 / 4)
-        
-    print >>f, '== %s ==' % exprName
+    titleName = params.titleName()
+    blockSizeUnitList = params.blockSizeUnitList()
+
+    print >>f, '== %s ==' % titleName
     print >>f, '== Goals =='
 
     if goals is not None:
@@ -247,32 +242,38 @@ def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
 
     print >>f, '== Results =='
 
-    chartTypeList = params.chartTypeList()
-    patternList = params.patternList()
-    blockSizeUnitList = params.blockSizeUnitList()
-    patternModeList = params.patternModeList()
-    nThreadsList = params.nThreadsList()
-    widthList = params.widthList()
-
-    sTemplate = params.statisticsChartFileNameTemplate(
-        default='%s_%s_bs%s.png')
-    hTemplate = params.histogramChartFileNameTemplate(
-        default='histogram_%s_%s_bs%s_th%s_w%s.png')
+    if params.isPlotStat():
+        statNameList = params.statNameList()
+        statDirList = params.statDirList()
+        chartTypeList = params.chartTypeList()
+        patternList = params.patternList()
+        widthPx = params.statWidthPx(default=640)
+        heightPx = params.statHeightPx(default=widthPx * 3 / 4)
+        sTemplate = params.statChartFileTemplate(
+            default='%s_%s_bs%s.png')
+        print >>f, '=== Performance Statistics ==='
+        renderStatistics(f, chartTypeList, patternList,
+                         blockSizeUnitList,
+                         names=statNameList,
+                         prefixes=map(lambda x: '%s/' % x, statDirList),
+                         template=sTemplate,
+                         widthPx=widthPx, heightPx=heightPx)
     
-    print >>f, '=== Performance Statistics ==='
-    renderStatistics(f, chartTypeList, patternList,
-                     blockSizeUnitList,
-                     names=nameList,
-                     prefixes=map(lambda x: '%s/' % x, statisticsDirList),
-                     template=sTemplate,
-                     widthPx=widthPx, heightPx=heightPx)
-
-    if histogramDir is not None:
+    if params.isPlotHistogram():
+        histogramDir = params.histogramDir()
+        hTemplate = params.histogramChartFileTemplate(
+            default='histogram_%s_%s_bs%s_th%s_w%s.png')
+        patternModeList = params.patternModeList()
+        nThreadsList = params.nThreadsList()
+        widthList = params.widthList()
+        widthPx = params.histogramWidthPx(default=240)
+        heightPx = params.histogramHeightPx(default=widthPx * 3 / 4)
         print >>f, '=== Response Histogram ==='
         renderHistogram(f, patternModeList, blockSizeUnitList,
                         nThreadsList, widthList,
                         prefix='%s/' % histogramDir,
-                        template=hTemplate)
+                        template=hTemplate,
+                        widthPx=widthPx, heightPx=heightPx)
     
     print >>f, '== Conclusion =='
     if conclusion is not None:
@@ -292,7 +293,7 @@ def doMain():
         print msg
         exit(1)
     
-    wikiFileName = params.exprName() + '.mediawiki'
+    wikiFileName = params.titleName() + '.mediawiki'
     f = open(wikiFileName, 'w')
     renderIorethReport(f, params)
     f.close()

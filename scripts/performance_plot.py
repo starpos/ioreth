@@ -23,7 +23,7 @@ class PerformancePlot:
   
   """
   def __init__(self, rel, pattern, blockSize, target, ylabel, title='', output='output.png',
-               scale=Decimal(1.0), xRange='*:*', yRange='0:*'):
+               scale=Decimal(1.0), xRange='*:*', yRange='0:*', debug=False):
     """
     rel :: Relation
     pattern :: str
@@ -41,6 +41,8 @@ class PerformancePlot:
       xrange.
     yRange :: str
       yrange.
+    debug :: bool
+      debug print if True.
     
     """
     assert(isinstance(rel, Relation))
@@ -63,6 +65,7 @@ class PerformancePlot:
     self.__scale = scale
     self.__xrange = xRange
     self.__yrange = yRange
+    self.__debug = debug
 
   def plot(self):
     """
@@ -149,7 +152,11 @@ class PerformancePlot:
     return :: None
     
     """
-    g = Gnuplot.Gnuplot(debug=1)
+    print "Plot to %s ..." % outputFileName
+    if self.__debug:
+      g = Gnuplot.Gnuplot(debug=1)
+    else:
+      g = Gnuplot.Gnuplot()
     g.title(title)
     g.xlabel('Number of threads')
     g.ylabel(ylabel)
@@ -161,27 +168,32 @@ class PerformancePlot:
     g.plot(*plotData)
 
 
-def plotPerformanceData(csvLike, titleTemplate, outputTemplate, targetColumn, ylabel,
-                        patternMap, keyPairs, scale=Decimal(1.0), xRange='*:*', yRange='0:*'):
+def plotPerformanceData(csvLike, titleTemplate, outputTemplate, targetColumn, yLabel,
+                        patternMap, params, scale=Decimal(1.0), xRange='*:*', debug=False):
                         
   """
+  params :: [(pattern :: str, bsU :: str, yRange :: str|None)]
+      list of parameters.
+  
   """
   assert(isinstance(csvLike, CsvLike))
   assert(isinstance(titleTemplate, str))
   assert(isinstance(outputTemplate, str))
   assert(isinstance(targetColumn, str))
-  assert(isinstance(ylabel, str))
+  assert(isinstance(yLabel, str))
   assert(isinstance(patternMap, dict))
-  assert(isinstance(keyPairs, list))
+  assert(isinstance(params, list))
   assert(isinstance(scale, Decimal))
   assert(isinstance(xRange, str))
-  assert(isinstance(yRange, str))
+  assert(isinstance(debug, bool))
   
-  for pattern, blockSizeU in keyPairs:
+  for pattern, blockSizeU, yRange in params:
     title = titleTemplate % (patternMap[pattern], blockSizeU)
     output = outputTemplate % (pattern, blockSizeU)
     blockSizeS = str(util.u2s(blockSizeU))
-    rp = PerformancePlot(csvLike, pattern, blockSizeS, targetColumn, ylabel, title, output,
-                         scale, xRange, yRange)
+    if yRange is None:
+      yRange = '0:*'
+    rp = PerformancePlot(csvLike, pattern, blockSizeS,
+                         targetColumn, yLabel, title, output,
+                         scale, xRange, yRange, debug)
     rp.plot()
-

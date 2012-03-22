@@ -1,0 +1,12 @@
+{
+    #'patternMap': {'seq': 'sequential', 'rnd': 'random'},
+    'plotDirList': ['res'],
+    'outDirList': ['histogram'],
+    'blockSizeUnitList': ['512', '4k', '32k', '256k'],
+    'patternModeList': [(pattern, mode) for (pattern, mode) in
+                        [('rnd', 'read'), ('rnd', 'write'), ('rnd', 'mix'),
+                         ('seq', 'read'), ('seq', 'write')]],
+    'nThreadsList': [1, 2, 4, 8, 12, 16, 24, 32],
+    'widthList': ['0.0001', '0.001', '0.01'],
+    'DUMMY': None
+}

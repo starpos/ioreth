@@ -19,7 +19,7 @@ class HistogramPlot:
   Data and methods to plot.
   
   """
-  def __init__(self, histogramG, width, title='', output='output.png'):
+  def __init__(self, histogramG, width, title='', output='output.png', debug=False):
     """
     histogramG :: generator((representative :: Decimal, count :: int))
     width :: str
@@ -27,6 +27,8 @@ class HistogramPlot:
     title :: str
     output :: str
       Output file name.
+    debug :: bool
+      Debug print if True.
     
     """
     assert(type(histogramG) is types.GeneratorType)
@@ -37,6 +39,7 @@ class HistogramPlot:
     self.__width = width
     self.__title = title
     self.__output = output
+    self.__debug = debug
 
   def plot(self):
     """
@@ -58,7 +61,11 @@ class HistogramPlot:
     return :: None
     
     """
-    g = Gnuplot.Gnuplot(debug=1)
+    if self.__debug:
+      g = Gnuplot.Gnuplot(debug=1)
+    else:
+      g = Gnuplot.Gnuplot()
+    print "Plot to %s ..." % output
     g.title(title)
     g.xlabel('Response time [sec]')
     g.ylabel('Number of plots (width: %s)' % width)
