@@ -133,17 +133,17 @@ def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], pr
     #print createTableStr2(map(mapperX, paramsX), map(mapperY, paramsY), matrix)
 
 
-def renderHistogram(f, patternModes, blockSizeUs, nThreadss, widths, prefix=''):
+def renderHistogram(f, patternModeList, bsUList, nThreadsList, widthList, prefix=''):
     """
     f :: file
-    patternModes :: [(pattern :: str, mode :: str)]
+    patternModeList :: [(pattern :: str, mode :: str)]
         pattern is like 'rnd', 'seq'.
         mode is like 'read', 'write', 'mix'.
-    blockSizeUs :: [str]
+    bsUList :: [str]
         block size with unit like '512', '4k', '32k', '256k'.
-    nThreadss :: [str]
-        nthreads like '1', '4', '8'.
-    widths :: [str]
+    nThreadsList :: [int]
+        nthreads like 1, 4, 8.
+    widthList :: [str]
         bins' width of response histogram in second like '0.01', '0.001'.
     prefix :: str
         prefix of filename.
@@ -157,10 +157,10 @@ def renderHistogram(f, patternModes, blockSizeUs, nThreadss, widths, prefix=''):
     #     for s in applyStringTemplate('%s_%s_bs%s.png', rel):
     #         print s
     #     print
-    paramsY0 = patternModes
-    paramsY1 = blockSizeUs
-    paramsY2 = nThreadss
-    paramsX0 = widths
+    paramsY0 = patternModeList
+    paramsY1 = bsUList
+    paramsY2 = map(str, nThreadsList)
+    paramsX0 = widthList
 
     def mapperY0((pattern, mode)):
         d0 = {'rnd': 'random', 'seq': 'sequential'}
