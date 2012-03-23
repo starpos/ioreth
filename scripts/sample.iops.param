@@ -18,6 +18,7 @@
     'titleTemplate': 'IOPS with pattern %s, blocksize %s',
     'targetColumn': 'iops',
     'yLabel': 'IOPS',
+    #'xRange': '0:*',
     'scale': '1',
     'DUMMY': None
 }

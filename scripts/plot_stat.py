@@ -32,6 +32,7 @@ def main():
   outFileParams = params.outFileParams()
   titleTemplate = params.titleTemplate()
   targetColumn = params.targetColumn()
+  xRange = params.xRange('*:*')
   yLabel = params.yLabel()
   scale = params.scale()
   patternMap = params.patternMap({'rnd':'random', 'seq':'sequential'})
@@ -49,7 +50,7 @@ def main():
 
     plotPerformanceData(c, titleTemplate, outFilePathTemplate,
                         targetColumn, yLabel, patternMap,
-                        outFileParams, scale=scale, xRange='*:*', debug=False)
+                        outFileParams, scale=scale, xRange=xRange, debug=False)
     f.close()
 
 if __name__ == "__main__":

@@ -183,7 +183,7 @@ class ParamsForStatPlot(ParamsChecker):
     def patternMap(self, default=None):
         return self.getMaybe('patternMap', default)
 
-    def xRrange(self, default="*:*"):
+    def xRange(self, default="*:*"):
         return self.getMaybe('xRange', default)
 
     def scaleStr(self, default='1'):

@@ -18,6 +18,7 @@
     'titleTemplate': 'Response with pattern %s, blocksize %s',
     'targetColumn': 'response',
     'yLabel': 'Response time [msec]',
+    #'xRange': '0:*',
     'scale': '1000',
     'DUMMY': None
 }
