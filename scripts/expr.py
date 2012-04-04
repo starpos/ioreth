@@ -149,7 +149,7 @@ def runExpr(rawParams):
             os.system(totalCmd)
     
 def main():
-    rawParams = util.getParams(sys.argv[1])
+    rawParams = getParams(sys.argv[1])
     try:
         runExpr(rawParams)
     except ParamsException, msg:
