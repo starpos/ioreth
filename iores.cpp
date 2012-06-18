@@ -71,7 +71,11 @@ public:
         ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
                  blockSize_, accessRange_, isShowEachResponse_);
 #endif
-        if(::posix_memalign(&bufV_, blockSize_, blockSize_) != 0) {
+        size_t alignSize = 512;
+        while (alignSize < blockSize_) {
+            alignSize *= 2;
+        }
+        if(::posix_memalign(&bufV_, alignSize, blockSize_) != 0) {
             throw std::runtime_error("posix_memalign failed");
         }
         buf_ = static_cast<char*>(bufV_);

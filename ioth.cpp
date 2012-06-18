@@ -190,7 +190,11 @@ private:
             : bd_(std::move(bd))
             , blockSize_(blockSize) {
 
-            if(::posix_memalign((void **)&buf_, blockSize, blockSize) != 0) {
+            size_t alignSize = 512;
+            while (alignSize < blockSize) {
+                alignSize *= 2;
+            }
+            if(::posix_memalign((void **)&buf_, alignSize, blockSize) != 0) {
                 throw std::runtime_error("posix_memalign failed");
             }
         }
