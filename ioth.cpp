@@ -68,7 +68,7 @@ public:
         , period_(0)
         , count_(0)
         , nthreads_(1)
-        , queueSize_(1) {
+        , queueSize_(128) {
 
         parse(argc, argv);
 
@@ -94,7 +94,7 @@ public:
                  "             -p and -c is exclusive.\n"
                  "    -w:      write instead read.\n"
                  "    -t num:  number of threads in parallel.\n"
-                 "    -q size: queue size per thread.\n"
+                 "    -q size: queue size.\n"
                  "    -r:      show response of each IO.\n"
                  "    -v:      show version.\n"
                  "    -h:      show this help.\n"
@@ -404,9 +404,8 @@ private:
 
 void execExperiment(const Options& opt)
 {
-    const unsigned int taskQueueLength = 128; /* magic number... */
     IoThroughputBench bench(opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
-                            opt.getNthreads(), taskQueueLength, opt.isShowEachResponse());
+                            opt.getNthreads(), opt.getQueueSize(), opt.isShowEachResponse());
     double begin, end;
     begin = getTime();
     try {
