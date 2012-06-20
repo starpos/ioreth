@@ -178,6 +178,7 @@ private:
     size_t period_;
     size_t count_;
     size_t nthreads_;
+    size_t queueSize_;
 
 public:
     Options(int argc, char* argv[])
@@ -190,27 +191,62 @@ public:
         , isShowHelp_(false)
         , period_(0)
         , count_(0)
-        , nthreads_(1) {
+        , nthreads_(1)
+        , queueSize_(1) {
 
         parse(argc, argv);
 
         if (isShowVersion_ || isShowHelp_) {
             return;
         }
-        if (args_.size() != 1 || blockSize_ == 0) {
-            throw std::runtime_error("specify blocksize (-b), and device.");
-        }
-        if (period_ == 0 && count_ == 0) {
-            throw std::runtime_error("specify period (-p) or count (-c).");
-        }
+        checkAndThrow();
     }
 
+    void showVersion() {
+
+        ::printf("iores version %s\n", IORETH_VERSION);
+    }
+    
+    void showHelp() {
+
+        ::printf("usage: %s [option(s)] [file or device]\n"
+                 "options: \n"
+                 "    -s size: access range in blocks.\n"
+                 "    -b size: blocksize in bytes.\n"
+                 "    -p secs: execute period in seconds.\n"
+                 "    -c num:  number of IOs to execute.\n"
+                 "             -p and -c is exclusive.\n"
+                 "    -w:      write instead read.\n"
+                 "    -m:      read/write mix instead read.\n"
+                 "             -w and -m is exclusive.\n"
+                 "    -t num:  number of threads in parallel.\n"
+                 "    -q size: queue size per thread.\n"
+                 "    -r:      show response of each IO.\n"
+                 "    -v:      show version.\n"
+                 "    -h:      show this help.\n"
+                 , programName_.c_str()
+            );
+    }
+
+    const std::vector<std::string>& getArgs() const { return args_; }
+    size_t getAccessRange() const { return accessRange_; }
+    size_t getBlockSize() const { return blockSize_; }
+    Mode getMode() const { return mode_; }
+    bool isShowEachResponse() const { return isShowEachResponse_; }
+    bool isShowVersion() const { return isShowVersion_; }
+    bool isShowHelp() const { return isShowHelp_; }
+    size_t getPeriod() const { return period_; }
+    size_t getCount() const { return count_; }
+    size_t getNthreads() const { return nthreads_; }
+    size_t getQueueSize() const { return queueSize_; }
+
+private:
     void parse(int argc, char* argv[]) {
 
         programName_ = argv[0];
         
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:wmrvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:wmrvh");
 
             if (c < 0) { break; }
 
@@ -236,6 +272,9 @@ public:
             case 't': /* nthreads */
                 nthreads_ = ::atol(optarg);
                 break;
+            case 'q':
+                queueSize_ = ::atol(optarg);
+                break;
             case 'r': /* show each response */
                 isShowEachResponse_ = true;
                 break;
@@ -253,41 +292,22 @@ public:
         }
     }
 
-    void showVersion() {
+    void checkAndThrow() {
 
-        ::printf("iores version %s\n", IORETH_VERSION);
-    }
-    
-    void showHelp() {
-
-        ::printf("usage: %s [option(s)] [file or device]\n"
-                 "options: \n"
-                 "    -s size: access range in blocks.\n"
-                 "    -b size: blocksize in bytes.\n"
-                 "    -p secs: execute period in seconds.\n"
-                 "    -c num:  number of IOs to execute.\n"
-                 "             -p and -c is exclusive.\n"
-                 "    -w:      write instead read.\n"
-                 "    -m:      read/write mix instead read.\n"
-                 "             -w and -m is exclusive.\n"
-                 "    -t num:  number of threads in parallel.\n"
-                 "    -r:      show response of each IO.\n"
-                 "    -v:      show version.\n"
-                 "    -h:      show this help.\n"
-                 , programName_.c_str()
-            );
+        if (args_.size() != 1 || blockSize_ == 0) {
+            throw std::runtime_error("specify blocksize (-b), and device.");
+        }
+        if (period_ == 0 && count_ == 0) {
+            throw std::runtime_error("specify period (-p) or count (-c).");
+        }
+        if (queueSize_ == 0) {
+            throw std::runtime_error("queue size (-q) must be 1 or more.");
+        }
+        if (nthreads_ == 0) {
+            throw std::runtime_error("number of threads (-t) must be 1 or more.");
+        }
     }
 
-    const std::vector<std::string>& getArgs() const { return args_; }
-    size_t getAccessRange() const { return accessRange_; }
-    size_t getBlockSize() const { return blockSize_; }
-    Mode getMode() const { return mode_; }
-    bool isShowEachResponse() const { return isShowEachResponse_; }
-    bool isShowVersion() const { return isShowVersion_; }
-    bool isShowHelp() const { return isShowHelp_; }
-    size_t getPeriod() const { return period_; }
-    size_t getCount() const { return count_; }
-    size_t getNthreads() const { return nthreads_; }
 };
 
 
