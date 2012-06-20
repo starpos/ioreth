@@ -2,13 +2,14 @@
 
 CXX = g++
 CFLAGS = -Wall -O2 -std=c++11 -pthread
+LDFLAGS = -laio
 
 all: iores ioth
 
 iores: iores.o
-	$(CXX) $(CFLAGS) -o $@ $<
+	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $<
 ioth: ioth.o
-	$(CXX) $(CFLAGS) -o $@ $<
+	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -c $<

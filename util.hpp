@@ -9,6 +9,8 @@
 #define _FILE_OFFSET_BITS 64
 
 #include <vector>
+#include <queue>
+#include <unordered_map>
 #include <string>
 #include <algorithm>
 #include <exception>
@@ -23,6 +25,7 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <linux/fs.h>
+#include <libaio.h>
 
 /**
  * Each IO log.
@@ -158,6 +161,7 @@ public:
         }
     }
     const Mode getMode() const { return mode_; }
+    int getFd() const { return fd_; }
 
 private:
 
@@ -215,6 +219,169 @@ private:
         return ret;
     }
 };
+
+struct AioData
+{
+    struct iocb iocb;
+    off_t oft;
+    size_t size;
+    char *buf;
+    double beginTime;
+    double endTime;
+};
+
+typedef std::shared_ptr<AioData> AioDataPtr;
+
+/**
+ * Asynchronous IO wrapper.
+ */
+class Aio
+{
+
+private:
+    int fd_;
+    size_t queueSize_;
+    io_context_t ctx_;
+    std::unordered_map<void *, AioDataPtr> aioMap_;
+    std::queue<AioDataPtr> aioQueue_;
+
+public:
+    /**
+     * @fd Opened file descripter.
+     * @queueSize queue size for aio.
+     */
+    Aio(int fd, size_t queueSize)
+        : fd_(fd)
+        , queueSize_(queueSize) {
+
+        assert(fd_ > 0);
+        io_queue_init(queueSize_, &ctx_);
+    }
+
+    ~Aio() {
+
+        io_queue_run(ctx_);
+        io_queue_release(ctx_);
+    }
+
+    class EofError : public std::exception {};
+
+    /**
+     * Prepare a read IO.
+     */
+    AioDataPtr prepareRead(off_t oft, size_t size, char* buf) {
+
+        aioQueue_.push(AioDataPtr(new AioData));
+        auto& ptr = aioQueue_.back();
+        ptr->oft = oft;
+        ptr->size = size;
+        ptr->buf = buf;
+        ptr->beginTime = 0.0;
+        ptr->endTime = 0.0;
+        io_prep_pread(&ptr->iocb, fd_, buf, size, oft);
+        return ptr;
+    }
+
+    /**
+     * Prepare a write IO.
+     */
+    AioDataPtr prepareWrite(off_t oft, size_t size, char* buf) {
+
+        aioQueue_.push(AioDataPtr(new AioData));
+        auto& ptr = aioQueue_.back();
+        ptr->oft = oft;
+        ptr->size = size;
+        ptr->buf = buf;
+        ptr->beginTime = 0.0;
+        ptr->endTime = 0.0;
+        io_prep_pwrite(&ptr->iocb, fd_, buf, size, oft);
+        return ptr;
+    }
+
+    /**
+     * Submit all prepared IO(s).
+     */
+    void submit() {
+
+        size_t nr = aioQueue_.size();
+        if (nr == 0) {
+            return;
+        }
+        std::vector<struct iocb *> iocbs(nr);
+        double beginTime = getTime();
+        for (size_t i = 0; i < nr; i++) {
+            auto& ptr = aioQueue_.front();
+            aioMap_.insert(std::make_pair(&ptr->iocb, ptr));
+            aioQueue_.pop();
+            iocbs[i] = &ptr->iocb;
+            ptr->beginTime = beginTime;
+        }
+        int err = io_submit(ctx_, nr, &iocbs[0]);
+        if (err != static_cast<int>(nr)) {
+            throw EofError();
+        }
+    }
+
+    /**
+     * Wait several IO(s) completed.
+     *
+     * @nr number of waiting IO(s).
+     * @events event array for temporary use.
+     * @aioQueue AioDataPtr of completed IO will be pushed into it.
+     */
+    void wait(size_t nr,
+              std::vector<struct io_event>& events,
+              std::queue<AioDataPtr>& aioQueue) {
+
+        assert(nr = events.size());
+        
+        size_t done = 0;
+        bool isError = false;
+        while (done < nr) {
+            int tmpNr = io_getevents(ctx_, 1, nr - done, &events[done], NULL);
+            if (tmpNr < 1) {
+                throw std::runtime_error("io_getevents failed.");
+            }
+            double endTime = getTime();
+            for (size_t i = done; i < done + tmpNr; i++) {
+                auto ptr = aioMap_[events[i].obj];
+                aioMap_.erase(&ptr->iocb);
+                if (events[i].res != ptr->iocb.u.c.nbytes) {
+                    isError = true;
+                }
+                ptr->endTime = endTime;
+                aioQueue.push(ptr);
+            }
+            done += tmpNr;
+        }
+        if (isError) {
+            throw EofError();
+        }
+    }
+
+    /**
+     * Wait just one IO completed.
+     *
+     * @return aio data pointer.
+     */
+    AioDataPtr waitOne() {
+
+        struct io_event event;
+        int err = io_getevents(ctx_, 1, 1, &event, NULL);
+        double endTime = getTime();
+        if (err != 1) {
+            throw std::runtime_error("io_getevents failed.");
+        }
+        auto ptr = aioMap_[event.obj];
+        aioMap_.erase(&ptr->iocb);
+        if (event.res != ptr->iocb.u.c.nbytes) {
+            throw EofError();
+        }
+        ptr->endTime = endTime;
+        return ptr;
+    }
+};
+
 
 class PerformanceStatistics
 {
