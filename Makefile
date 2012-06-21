@@ -1,7 +1,11 @@
 .PHONY: all clean
 
 CXX = g++
+ifeq ($(DEBUG),1)
+CFLAGS = -Wall -g -std=c++11 -pthread
+else
 CFLAGS = -Wall -O2 -std=c++11 -pthread
+endif
 LDFLAGS = -laio
 
 all: iores ioth
