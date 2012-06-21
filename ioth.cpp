@@ -68,7 +68,7 @@ public:
         , period_(0)
         , count_(0)
         , nthreads_(1)
-        , queueSize_(128) {
+        , queueSize_(1) {
 
         parse(argc, argv);
 
@@ -94,6 +94,7 @@ public:
                  "             -p and -c is exclusive.\n"
                  "    -w:      write instead read.\n"
                  "    -t num:  number of threads in parallel.\n"
+                 "             if 0, use aio instead thread.\n"
                  "    -q size: queue size.\n"
                  "    -r:      show response of each IO.\n"
                  "    -v:      show version.\n"
@@ -120,7 +121,7 @@ private:
         programName_ = argv[0];
         
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:wrvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:wrvh");
 
             if (c < 0) { break; }
 
@@ -174,9 +175,6 @@ private:
         if (queueSize_ == 0) {
             throw std::runtime_error("queue size (-q) must be 1 or more.");
         }
-        if (nthreads_ == 0) {
-            throw std::runtime_error("number of threads (-t) must be 1 or more.");
-        }
     }
 };
 
@@ -192,7 +190,7 @@ private:
     const Mode mode_;
     const size_t blockSize_; /* [byte] */
     const unsigned int nThreads_;
-    const unsigned taskQueueLength_;
+    const unsigned queueSize_;
     const bool isShowEachResponse_;
     
     class ThreadLocalData
@@ -236,7 +234,7 @@ private:
             return *this;
         }
         
-        ~ThreadLocalData() throw() { free(buf_); }
+        ~ThreadLocalData() noexcept { free(buf_); }
 
         BlockDevice& getBlockDevice() { return bd_; }
         size_t getBlockDeviceSize() const { return bd_.getDeviceSize() / blockSize_; }
@@ -257,12 +255,12 @@ public:
      * @param startBlockId 
      */
     IoThroughputBench(const std::string& name, const Mode mode, size_t blockSize,
-                      unsigned int nThreads, unsigned taskQueueLength, bool isShowEachResponse)
+                      unsigned int nThreads, unsigned queueSize, bool isShowEachResponse)
         : name_(name)
         , mode_(mode)
         , blockSize_(blockSize)
         , nThreads_(nThreads)
-        , taskQueueLength_(taskQueueLength)
+        , queueSize_(queueSize)
         , isShowEachResponse_(isShowEachResponse) {
 #if 0
         ::printf("blockSize %zu nThreads %u isShowEachResponse %d\n",
@@ -278,7 +276,7 @@ public:
         }
         assert(threadLocal_.size() == nThreads);
     }
-    ~IoThroughputBench() throw() {}
+    ~IoThroughputBench() noexcept {}
 
 
     /**
@@ -288,7 +286,7 @@ public:
     void execNtimes(size_t n, size_t startBlockId) {
 
         ThreadPoolWithId<size_t> threadPool(
-            nThreads_, taskQueueLength_,
+            nThreads_, queueSize_,
             [&](size_t blockId, unsigned int id) {
                 this->doWork(blockId, id);
             });
@@ -308,7 +306,7 @@ public:
     void execNsecs(size_t runPeriodInSec, size_t startBlockId) {
         
         ThreadPoolWithId<size_t> threadPool(
-            nThreads_, taskQueueLength_,
+            nThreads_, queueSize_,
             [&](size_t blockId, unsigned int id) {
                 this->doWork(blockId, id);
             });
@@ -402,7 +400,10 @@ private:
     }
 };
 
-void execExperiment(const Options& opt)
+/**
+ * Use thread for parallel IO execution.
+ */
+void execThreadExperiment(const Options& opt)
 {
     IoThroughputBench bench(
         opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
@@ -459,7 +460,7 @@ private:
     const Mode mode_;
     const size_t blockSize_; /* [byte] */
     const unsigned int nThreads_;
-    const unsigned taskQueueLength_;
+    const unsigned int queueSize_;
     const bool isShowEachResponse_;
 
     std::queue<IoLog> logQ_;
@@ -488,7 +489,7 @@ private:
             }
         }
 
-        ~BlockBuffer() {
+        ~BlockBuffer() noexcept {
 
             for (size_t i = 0; i < nr_; i++) {
                 free(bufArray_[i]);
@@ -512,22 +513,23 @@ public:
      */
     AioThroughputBench(
         const std::string& name, const Mode mode, size_t blockSize,
-        unsigned int nThreads, unsigned taskQueueLength, bool isShowEachResponse)
+        unsigned int nThreads, unsigned int queueSize, bool isShowEachResponse)
         : name_(name)
         , mode_(mode)
         , blockSize_(blockSize)
         , nThreads_(nThreads)
-        , taskQueueLength_(taskQueueLength)
+        , queueSize_(queueSize)
         , isShowEachResponse_(isShowEachResponse)
         , bd_(name, mode, true)
-        , aio_(bd_.getFd(), nThreads) {
+        , aio_(bd_.getFd(), queueSize) {
 #if 0
         ::printf("blockSize %zu nThreads %u isShowEachResponse %d\n",
                  blockSize_, nThreads_, isShowEachResponse_);
 #endif
-        assert(nThreads > 0);
+        assert(nThreads == 0);
+        assert(queueSize > 0);
     }
-    ~AioThroughputBench() throw() {}
+    ~AioThroughputBench() noexcept {}
 
     /**
      * @n Number of blocks to issue.
@@ -535,20 +537,23 @@ public:
      */
     void execNtimes(size_t n, size_t startBlockId) {
 
-        BlockBuffer bb(nThreads_ * 2, blockSize_);
+        BlockBuffer bb(queueSize_ * 2, blockSize_);
 
         size_t pending = 0;
         size_t blockId = startBlockId;
+        size_t endBlockId = startBlockId + n;
 
         /* Fill the queue. */
-        while (pending < nThreads_ && blockId < startBlockId + n) {
+        while (pending < queueSize_ && blockId < endBlockId) {
             prepareIo(blockId++, bb.next());
             pending++;
         }
         aio_.submit();
-        /* Loop. */
-        while (blockId < startBlockId + n) {
+        /* Wait and fill. */
+        while (blockId < endBlockId) {
 
+            assert(pending == queueSize_);
+            
             auto log = toIoLog(aio_.waitOne());
             stat_.updateRt(log.response);
             logQ_.push(log);
@@ -558,7 +563,7 @@ public:
             pending++;
             aio_.submit();
         }
-        /* Drop all from the queue. */
+        /* Wait remaining. */
         while (pending > 0) {
             logQ_.push(toIoLog(aio_.waitOne()));
             pending--;
@@ -571,7 +576,7 @@ public:
      */
     void execNsecs(size_t runPeriodInSec, size_t startBlockId) {
         
-        BlockBuffer bb(nThreads_ * 2, blockSize_);
+        BlockBuffer bb(queueSize_ * 2, blockSize_);
 
         size_t pending = 0;
         size_t blockId = startBlockId;
@@ -581,14 +586,16 @@ public:
         endTime = beginTime;
         
         /* Fill the queue. */
-        while (pending < nThreads_) {
+        while (pending < queueSize_) {
             prepareIo(blockId++, bb.next());
             pending++;
         }
         aio_.submit();
-        /* Loop. */
+        /* Wait and fill. */
         while (endTime - beginTime < static_cast<double>(runPeriodInSec)) {
 
+            assert(pending == queueSize_);
+            
             auto ptr = aio_.waitOne();
             endTime = ptr->endTime;
             auto log = toIoLog(ptr);
@@ -600,7 +607,7 @@ public:
             pending++;
             aio_.submit();
         }
-        /* Drop all from the queue. */
+        /* Wait remaining. */
         while (pending > 0) {
             logQ_.push(toIoLog(aio_.waitOne()));
             pending--;
@@ -640,8 +647,10 @@ private:
     }
 };
 
-
-void execExperimentAio(const Options& opt)
+/**
+ * Use aio for parallel IO execution.
+ */
+void execAioExperiment(const Options& opt)
 {
     AioThroughputBench bench(
         opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
@@ -655,8 +664,8 @@ void execExperimentAio(const Options& opt)
         } else {
             bench.execNtimes(opt.getCount(), opt.getStartBlockId());
         }
-    } catch (const BlockDevice::EofError& e) {
-        printf("EofError.\n");
+    } catch (const Aio::EofError& e) {
+        ::printf("EofError.\n");
     }
     end = getTime();
 
@@ -671,11 +680,10 @@ void execExperimentAio(const Options& opt)
 
     /* Statistics */
     auto stat = bench.getStat();
-    printf("all ");
+    ::printf("all ");
     stat.print();
     printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
-
 
 int main(int argc, char* argv[])
 {
@@ -689,14 +697,15 @@ int main(int argc, char* argv[])
         } else if (opt.isShowHelp()) {
             opt.showHelp();
         } else {
-            execExperiment(opt);
+            if (opt.getNthreads() == 0) {
+                execAioExperiment(opt);
+            } else {
+                execThreadExperiment(opt);
+            }
         }
-        
     } catch (const std::runtime_error& e) {
-
         ::printf("error: %s\n", e.what());
     } catch (...) {
-
         ::printf("caught another error.\n");
     }
     

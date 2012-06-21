@@ -154,7 +154,7 @@ public:
             ssize_t ret = ::write(fd_, &buf[s], size - s);
             if (ret < 0) {
                 std::string e("write failed: ");
-                e += strerror(errno);
+                e += ::strerror(errno);
                 throw std::runtime_error(e);
             }
             s += ret;
@@ -220,6 +220,9 @@ private:
     }
 };
 
+/**
+ * An aio data.
+ */
 struct AioData
 {
     struct iocb iocb;
@@ -230,6 +233,9 @@ struct AioData
     double endTime;
 };
 
+/**
+ * Pointer to AioData.
+ */
 typedef std::shared_ptr<AioData> AioDataPtr;
 
 /**
@@ -237,7 +243,6 @@ typedef std::shared_ptr<AioData> AioDataPtr;
  */
 class Aio
 {
-
 private:
     int fd_;
     size_t queueSize_;
@@ -255,10 +260,10 @@ public:
         , queueSize_(queueSize) {
 
         assert(fd_ > 0);
-        io_queue_init(queueSize_, &ctx_);
+        ::io_queue_init(queueSize_, &ctx_);
     }
 
-    ~Aio() {
+    ~Aio() noexcept {
 
         ::io_queue_release(ctx_);
     }
@@ -268,7 +273,7 @@ public:
     /**
      * Prepare a read IO.
      */
-    AioDataPtr prepareRead(off_t oft, size_t size, char* buf) {
+    AioDataPtr prepareRead(off_t oft, size_t size, char* buf) noexcept {
 
         aioQueue_.push(AioDataPtr(new AioData));
         auto& ptr = aioQueue_.back();
@@ -277,14 +282,14 @@ public:
         ptr->buf = buf;
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
-        io_prep_pread(&ptr->iocb, fd_, buf, size, oft);
+        ::io_prep_pread(&ptr->iocb, fd_, buf, size, oft);
         return ptr;
     }
 
     /**
      * Prepare a write IO.
      */
-    AioDataPtr prepareWrite(off_t oft, size_t size, char* buf) {
+    AioDataPtr prepareWrite(off_t oft, size_t size, char* buf) noexcept {
 
         aioQueue_.push(AioDataPtr(new AioData));
         auto& ptr = aioQueue_.back();
@@ -293,7 +298,7 @@ public:
         ptr->buf = buf;
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
-        io_prep_pwrite(&ptr->iocb, fd_, buf, size, oft);
+        ::io_prep_pwrite(&ptr->iocb, fd_, buf, size, oft);
         return ptr;
     }
 
@@ -315,8 +320,9 @@ public:
             iocbs[i] = &ptr->iocb;
             ptr->beginTime = beginTime;
         }
-        int err = io_submit(ctx_, nr, &iocbs[0]);
+        int err = ::io_submit(ctx_, nr, &iocbs[0]);
         if (err != static_cast<int>(nr)) {
+            /* ::printf("submit error %d.\n", err); */
             throw EofError();
         }
     }
@@ -337,7 +343,7 @@ public:
         size_t done = 0;
         bool isError = false;
         while (done < nr) {
-            int tmpNr = io_getevents(ctx_, 1, nr - done, &events[done], NULL);
+            int tmpNr = ::io_getevents(ctx_, 1, nr - done, &events[done], NULL);
             if (tmpNr < 1) {
                 throw std::runtime_error("io_getevents failed.");
             }
@@ -354,6 +360,7 @@ public:
             done += tmpNr;
         }
         if (isError) {
+            // ::printf("wait error.\n");
             throw EofError();
         }
     }
@@ -366,7 +373,7 @@ public:
     AioDataPtr waitOne() {
 
         struct io_event event;
-        int err = io_getevents(ctx_, 1, 1, &event, NULL);
+        int err = ::io_getevents(ctx_, 1, 1, &event, NULL);
         double endTime = getTime();
         if (err != 1) {
             throw std::runtime_error("io_getevents failed.");
@@ -374,6 +381,7 @@ public:
         auto ptr = aioMap_[event.obj];
         aioMap_.erase(&ptr->iocb);
         if (event.res != ptr->iocb.u.c.nbytes) {
+            // ::printf("waitOne error %lu\n", event.res);
             throw EofError();
         }
         ptr->endTime = endTime;
