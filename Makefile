@@ -1,4 +1,4 @@
-.PHONY: iores ioth clean
+.PHONY: all clean
 
 CXX = g++
 CFLAGS = -Wall -O2 -std=c++11 -pthread
