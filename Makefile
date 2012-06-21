@@ -1,19 +1,24 @@
-.PHONY: iores ioth clean
+.PHONY: all clean
 
 CXX = g++
+ifeq ($(DEBUG),1)
+CFLAGS = -Wall -g -std=c++11 -pthread
+else
 CFLAGS = -Wall -O2 -std=c++11 -pthread
+endif
+LDFLAGS = -laio
 
 all: iores ioth
 
 iores: iores.o
-	$(CXX) $(CFLAGS) -o $@ $<
+	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $<
 ioth: ioth.o
-	$(CXX) $(CFLAGS) -o $@ $<
+	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -c $<
 
-iores.o: iores.cpp util.hpp ioreth.hpp
+iores.o: iores.cpp util.hpp ioreth.hpp rand.hpp
 ioth.o: ioth.cpp util.hpp ioreth.hpp thread_pool.hpp
 
 clean: cleanTest
