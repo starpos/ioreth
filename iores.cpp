@@ -181,8 +181,6 @@ private:
 class IoResponseBench
 {
 private:
-    static std::mutex mutex_;
-    
     const int threadId_;
     BlockDevice& dev_;
     size_t blockSize_;
@@ -193,6 +191,8 @@ private:
     PerformanceStatistics& stat_;
     bool isShowEachResponse_;
 
+    std::mutex& mutex_; //shared among threads.
+    
 public:
     /**
      * @param dev block device.
@@ -202,7 +202,7 @@ public:
     IoResponseBench(int threadId, BlockDevice& dev, size_t blockSize,
                     size_t accessRange, std::queue<IoLog>& rtQ,
                     PerformanceStatistics& stat,
-                    bool isShowEachResponse)
+                    bool isShowEachResponse, std::mutex& mutex)
         : threadId_(threadId)
         , dev_(dev)
         , blockSize_(blockSize)
@@ -211,7 +211,8 @@ public:
         , buf_(nullptr)
         , rtQ_(rtQ)
         , stat_(stat)
-        , isShowEachResponse_(isShowEachResponse) {
+        , isShowEachResponse_(isShowEachResponse)
+        , mutex_(mutex) {
 #if 0
         ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
                  blockSize_, accessRange_, isShowEachResponse_);
@@ -306,16 +307,16 @@ private:
     }
 };
 
-std::mutex IoResponseBench::mutex_;
-
-void do_work(int threadId, const Options& opt, std::queue<IoLog>& rtQ, PerformanceStatistics& stat)
+void do_work(int threadId, const Options& opt,
+             std::queue<IoLog>& rtQ, PerformanceStatistics& stat,
+             std::mutex& mutex)
 {
     const bool isDirect = true;
 
     BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
     
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
-                          rtQ, stat, opt.isShowEachResponse());
+                          rtQ, stat, opt.isShowEachResponse(), mutex);
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
@@ -324,15 +325,17 @@ void do_work(int threadId, const Options& opt, std::queue<IoLog>& rtQ, Performan
 }
 
 void worker_start(std::vector<std::future<void> >& workers, int n, const Options& opt,
-                  std::vector<std::queue<IoLog> >& rtQs, std::vector<PerformanceStatistics>& stats)
+                  std::vector<std::queue<IoLog> >& rtQs,
+                  std::vector<PerformanceStatistics>& stats,
+                  std::mutex& mutex)
 {
-
     rtQs.resize(n);
     stats.resize(n);
     for (int i = 0; i < n; i ++) {
 
         std::future<void> f = std::async(
-            std::launch::async, do_work, i, std::ref(opt), std::ref(rtQs[i]), std::ref(stats[i]));
+            std::launch::async, do_work, i, std::ref(opt), std::ref(rtQs[i]),
+            std::ref(stats[i]), std::ref(mutex));
         workers.push_back(std::move(f));
     }
 }
@@ -362,8 +365,10 @@ void execThreadExperiment(const Options& opt)
     
     std::vector<std::future<void> > workers;
     double begin, end;
+    std::mutex mutex;
+    
     begin = getTime();
-    worker_start(workers, nthreads, opt, rtQs, stats);
+    worker_start(workers, nthreads, opt, rtQs, stats, mutex);
     worker_join(workers);
     end = getTime();
 
