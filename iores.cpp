@@ -386,13 +386,14 @@ private:
     const size_t queueSize_;
     const size_t accessRange_;
     const bool isShowEachResponse_;
+    const Mode mode_;
     
     BlockBuffer bb_;
     Rand<size_t, std::uniform_int_distribution<size_t> > rand_;
     std::queue<IoLog> logQ_;
     PerformanceStatistics stat_;
     Aio aio_;
-    std::function<bool()> decideIsWrite_;
+    
 
 public:
     AioResponseBench(const BlockDevice& dev, size_t blockSize, size_t queueSize,
@@ -402,12 +403,12 @@ public:
         , queueSize_(queueSize)
         , accessRange_(calcAccessRange(accessRange, blockSize, dev))
         , isShowEachResponse_(isShowEachResponse)
+        , mode_(dev.getMode())
         , bb_(queueSize * 2, blockSize)
         , rand_(0, std::numeric_limits<size_t>::max())
         , logQ_()
         , stat_()
-        , aio_(dev.getFd(), queueSize)
-        , decideIsWrite_(getDecideIsWrite(dev.getMode())) {
+        , aio_(dev.getFd(), queueSize) {
 
         assert(blockSize_ % 512 == 0);
         assert(queueSize_ > 0);
@@ -480,31 +481,31 @@ public:
     std::queue<IoLog>& getIoLogQueue() { return logQ_; }
     
 private:
-    std::function<bool()> getDecideIsWrite(const Mode mode) {
+    bool decideIsWrite() {
 
-        std::function<bool()> ret;
+        bool isWrite = false;
         
-        switch(mode) {
+        switch(mode_) {
         case READ_MODE:
-            ret = []() { return false; };
+            isWrite = false;
             break;
         case WRITE_MODE:
-            ret = []() { return true; };
+            isWrite = true;
             break;
         case MIX_MODE:
-            ret = [&]() { return rand_.get(2) == 0; };
+            isWrite = rand_.get(2) == 0;
             break;
         default:
             assert(false);
         }
-        return ret;
+        return isWrite;
     }
     
     void prepareIo(char *buf) {
 
         size_t blockId = rand_.get(accessRange_);
         
-        if (decideIsWrite_()) {
+        if (decideIsWrite()) {
             aio_.prepareWrite(blockId * blockSize_, blockSize_, buf);
         } else {
             aio_.prepareRead(blockId * blockSize_, blockSize_, buf);
@@ -513,7 +514,7 @@ private:
 
     double waitAnIo() {
 
-        auto ptr = aio_.waitOne();
+        auto* ptr = aio_.waitOne();
         auto log = toIoLog(ptr);
         stat_.updateRt(log.response);
         if (isShowEachResponse_) {
@@ -522,7 +523,7 @@ private:
         return ptr->endTime;
     }
     
-    IoLog toIoLog(AioDataPtr ptr) {
+    IoLog toIoLog(AioData *ptr) {
 
         return IoLog(0, ptr->isWrite, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);
