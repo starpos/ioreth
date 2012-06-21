@@ -260,8 +260,7 @@ public:
 
     ~Aio() {
 
-        io_queue_run(ctx_);
-        io_queue_release(ctx_);
+        ::io_queue_release(ctx_);
     }
 
     class EofError : public std::exception {};
