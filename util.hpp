@@ -221,11 +221,21 @@ private:
 };
 
 /**
+ * Calculate access range.
+ */
+static inline size_t calcAccessRange(
+    size_t accessRange, size_t blockSize, const BlockDevice& dev) {
+    
+    return (accessRange == 0) ? (dev.getDeviceSize() / blockSize) : accessRange;
+}
+
+/**
  * An aio data.
  */
 struct AioData
 {
     struct iocb iocb;
+    bool isWrite;
     off_t oft;
     size_t size;
     char *buf;
@@ -277,6 +287,7 @@ public:
 
         aioQueue_.push(AioDataPtr(new AioData));
         auto& ptr = aioQueue_.back();
+        ptr->isWrite = false;
         ptr->oft = oft;
         ptr->size = size;
         ptr->buf = buf;
@@ -293,6 +304,7 @@ public:
 
         aioQueue_.push(AioDataPtr(new AioData));
         auto& ptr = aioQueue_.back();
+        ptr->isWrite = true;
         ptr->oft = oft;
         ptr->size = size;
         ptr->buf = buf;
@@ -414,7 +426,7 @@ public:
             min_ = rt;
         }
         total_ += rt;
-        count_ ++;
+        count_++;
     }
     
     double getMax() const { return max_; }
@@ -477,7 +489,6 @@ std::string getDataThroughputString(double throughput)
     return ss.str();
 }
 
-
 /**
  * Print throughput data.
  * @blockSize block size [bytes].
@@ -492,5 +503,45 @@ void printThroughput(size_t blockSize, size_t nio, double periodInSec)
     ::printf("Throughput: %.3f B/s %s %.3f iops.\n",
              throughput, getDataThroughputString(throughput).c_str(), iops);
 }
+
+/**
+ * Memory buffer for reuse.
+ */
+class BlockBuffer
+{
+private:
+    const size_t nr_;
+    std::vector<char *> bufArray_;
+    size_t idx_;
+        
+public:
+    BlockBuffer(size_t nr, size_t blockSize)
+        : nr_(nr)
+        , bufArray_(nr)
+        , idx_(0) {
+
+        assert(blockSize % 512 == 0);
+        char *p;
+        for (size_t i = 0; i < nr; i++) {
+            int ret = ::posix_memalign((void **)&p, 512, blockSize);
+            assert(ret == 0);
+            bufArray_[i] = p;
+        }
+    }
+
+    ~BlockBuffer() noexcept {
+
+        for (size_t i = 0; i < nr_; i++) {
+            ::free(bufArray_[i]);
+        }
+    }
+        
+    char* next() {
+
+        char *ret = bufArray_[idx_];
+        idx_ = (idx_ + 1) % nr_;
+        return ret;
+    }
+};
 
 #endif /* UTIL_HPP */

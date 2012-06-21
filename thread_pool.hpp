@@ -125,7 +125,7 @@ protected:
 
     void init(const std::function<void()>& do_work) {
 
-        for (unsigned int i = 0; i < poolSize_; i ++) {
+        for (unsigned int i = 0; i < poolSize_; i++) {
 
             std::thread th(do_work);
             workers_.push_back(std::move(th));
@@ -239,7 +239,7 @@ public:
         , futures_(poolSize) {
 
         TPB::init([&] { this->do_work(); });
-        for (unsigned int i = 0; i < poolSize; i ++) {
+        for (unsigned int i = 0; i < poolSize; i++) {
             auto tid = TPB::workers_[i].get_id();
             idMap_[tid] = i;
             futures_[i] = std::move(promises_[i].get_future());

@@ -18,7 +18,7 @@ ioth: ioth.o
 .cpp.o:
 	$(CXX) $(CFLAGS) -c $<
 
-iores.o: iores.cpp util.hpp ioreth.hpp
+iores.o: iores.cpp util.hpp ioreth.hpp rand.hpp
 ioth.o: ioth.cpp util.hpp ioreth.hpp thread_pool.hpp
 
 clean: cleanTest

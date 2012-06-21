@@ -160,7 +160,7 @@ private:
         }
 
         while (optind < argc) {
-            args_.push_back(argv[optind ++]);
+            args_.push_back(argv[optind++]);
         }
     }
 
@@ -192,6 +192,7 @@ private:
     const unsigned int nThreads_;
     const unsigned queueSize_;
     const bool isShowEachResponse_;
+    size_t maxBlockId_;
     
     class ThreadLocalData
     {
@@ -267,7 +268,7 @@ public:
                  blockSize_, nThreads_, isShowEachResponse_);
 #endif
         assert(nThreads > 0);
-        for (unsigned int i = 0; i < nThreads; i ++) {
+        for (unsigned int i = 0; i < nThreads; i++) {
 
             bool isDirect = true;
             BlockDevice bd(name, mode, isDirect);
@@ -275,9 +276,9 @@ public:
             threadLocal_.push_back(std::move(threadLocal));
         }
         assert(threadLocal_.size() == nThreads);
+        maxBlockId_ = threadLocal_[0].getBlockDeviceSize();
     }
     ~IoThroughputBench() noexcept {}
-
 
     /**
      * @n Number of blocks to issue.
@@ -290,8 +291,10 @@ public:
             [&](size_t blockId, unsigned int id) {
                 this->doWork(blockId, id);
             });
+
+        size_t endBlockId = std::min(maxBlockId_, startBlockId + n);
         
-        for (size_t i = startBlockId; i < startBlockId + n; i ++) {
+        for (size_t i = startBlockId; i < endBlockId; i++) {
             threadPool.submit(i);
         }
         threadPool.flush(); threadPool.stop(); threadPool.join();
@@ -316,7 +319,12 @@ public:
                 size_t blockId = startBlockId;
                 while (!shouldStop.load()) {
                     threadPool.submit(blockId);
-                    blockId ++;
+                    blockId++;
+                    if (blockId >= maxBlockId_) {
+                        threadPool.flush();
+                        threadPool.stop();
+                        break;
+                    }
                 }
             });
         threadPool.waitFor(std::chrono::seconds(runPeriodInSec));
@@ -424,7 +432,7 @@ void execThreadExperiment(const Options& opt)
 
     /* print each IO log. */
     if (opt.isShowEachResponse()) {
-        for (unsigned int id = 0; id < opt.getNthreads(); id ++) {
+        for (unsigned int id = 0; id < opt.getNthreads(); id++) {
 
             auto& logQ = bench.getLogQueue(id);
             while (!logQ.empty()) {
@@ -435,7 +443,7 @@ void execThreadExperiment(const Options& opt)
     }
 
     /* Print statistics. */
-    for (unsigned int id = 0; id < opt.getNthreads(); id ++) {
+    for (unsigned int id = 0; id < opt.getNthreads(); id++) {
 
         ::printf("threadId %u ", id);
         bench.getStat(id).print();
@@ -467,43 +475,8 @@ private:
     PerformanceStatistics stat_;
     BlockDevice bd_;
     Aio aio_;
+    const size_t maxBlockId_;
     
-    class BlockBuffer
-    {
-        size_t nr_;
-        std::vector<char *> bufArray_;
-        size_t idx_;
-        
-    public:
-        BlockBuffer(size_t nr, size_t blockSize)
-            : nr_(nr)
-            , bufArray_(nr)
-            , idx_(0) {
-
-            assert(blockSize % 512 == 0);
-            char *p;
-            for (size_t i = 0; i < nr; i++) {
-                int ret = posix_memalign((void **)&p, 512, blockSize);
-                assert(ret == 0);
-                bufArray_[i] = p;
-            }
-        }
-
-        ~BlockBuffer() noexcept {
-
-            for (size_t i = 0; i < nr_; i++) {
-                free(bufArray_[i]);
-            }
-        }
-        
-        char* next() {
-
-            char *ret = bufArray_[idx_];
-            idx_ = (idx_ + 1) % nr_;
-            return ret;
-        }
-    };
-
 public:
     /**
      * @param dev block device.
@@ -521,7 +494,8 @@ public:
         , queueSize_(queueSize)
         , isShowEachResponse_(isShowEachResponse)
         , bd_(name, mode, true)
-        , aio_(bd_.getFd(), queueSize) {
+        , aio_(bd_.getFd(), queueSize)
+        , maxBlockId_(bd_.getDeviceSize() / blockSize) {
 #if 0
         ::printf("blockSize %zu nThreads %u isShowEachResponse %d\n",
                  blockSize_, nThreads_, isShowEachResponse_);
@@ -541,7 +515,7 @@ public:
 
         size_t pending = 0;
         size_t blockId = startBlockId;
-        size_t endBlockId = startBlockId + n;
+        size_t endBlockId = std::min(maxBlockId_, startBlockId + n);
 
         /* Fill the queue. */
         while (pending < queueSize_ && blockId < endBlockId) {
@@ -554,9 +528,7 @@ public:
 
             assert(pending == queueSize_);
             
-            auto log = toIoLog(aio_.waitOne());
-            stat_.updateRt(log.response);
-            logQ_.push(log);
+            waitAnIo();
             pending--;
 
             prepareIo(blockId++, bb.next());
@@ -565,7 +537,7 @@ public:
         }
         /* Wait remaining. */
         while (pending > 0) {
-            logQ_.push(toIoLog(aio_.waitOne()));
+            waitAnIo();
             pending--;
         }
     }
@@ -586,21 +558,18 @@ public:
         endTime = beginTime;
         
         /* Fill the queue. */
-        while (pending < queueSize_) {
+        while (pending < queueSize_ && blockId < maxBlockId_) {
             prepareIo(blockId++, bb.next());
             pending++;
         }
         aio_.submit();
         /* Wait and fill. */
-        while (endTime - beginTime < static_cast<double>(runPeriodInSec)) {
+        while (endTime - beginTime < static_cast<double>(runPeriodInSec)
+               && blockId < maxBlockId_) {
 
             assert(pending == queueSize_);
             
-            auto ptr = aio_.waitOne();
-            endTime = ptr->endTime;
-            auto log = toIoLog(ptr);
-            stat_.updateRt(log.response);
-            logQ_.push(log);
+            endTime = waitAnIo();
             pending--;
 
             prepareIo(blockId++, bb.next());
@@ -609,7 +578,7 @@ public:
         }
         /* Wait remaining. */
         while (pending > 0) {
-            logQ_.push(toIoLog(aio_.waitOne()));
+            waitAnIo();
             pending--;
         }
     }
@@ -617,7 +586,7 @@ public:
     /**
      * Get the performance statistics.
      */
-    PerformanceStatistics getStat() {
+    PerformanceStatistics& getStat() {
 
         return stat_;
     }
@@ -640,9 +609,20 @@ private:
         }
     }
 
+    double waitAnIo() {
+
+        auto ptr = aio_.waitOne();
+        auto log = toIoLog(ptr);
+        stat_.updateRt(log.response);
+        if (isShowEachResponse_) { 
+            logQ_.push(log);
+        }
+        return ptr->endTime;
+    }
+
     IoLog toIoLog(AioDataPtr ptr) {
 
-        return IoLog(0, mode_ == WRITE_MODE, ptr->oft / ptr->size,
+        return IoLog(0, ptr->isWrite, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);
     }
 };
@@ -679,7 +659,7 @@ void execAioExperiment(const Options& opt)
     }
 
     /* Statistics */
-    auto stat = bench.getStat();
+    auto& stat = bench.getStat();
     ::printf("all ");
     stat.print();
     printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);

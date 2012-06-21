@@ -16,6 +16,7 @@
 #include <future>
 #include <mutex>
 #include <exception>
+#include <limits>
 
 #include <cstdio>
 #include <cassert>
@@ -32,6 +33,7 @@
 
 #include "ioreth.hpp"
 #include "util.hpp"
+#include "rand.hpp"
 
 class Options
 {
@@ -160,7 +162,7 @@ private:
         }
 
         while (optind < argc) {
-            args_.push_back(argv[optind ++]);
+            args_.push_back(argv[optind++]);
         }
     }
 
@@ -178,6 +180,9 @@ private:
     }
 };
 
+/**
+ * Single-threaded io response benchmark.
+ */
 class IoResponseBench
 {
 private:
@@ -190,6 +195,7 @@ private:
     std::queue<IoLog>& rtQ_;
     PerformanceStatistics& stat_;
     bool isShowEachResponse_;
+    Rand<size_t, std::uniform_int_distribution<size_t> > rand_;
 
     std::mutex& mutex_; //shared among threads.
     
@@ -212,6 +218,7 @@ public:
         , rtQ_(rtQ)
         , stat_(stat)
         , isShowEachResponse_(isShowEachResponse)
+        , rand_(0, std::numeric_limits<size_t>::max())
         , mutex_(mutex) {
 #if 0
         ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
@@ -226,8 +233,8 @@ public:
         }
         buf_ = static_cast<char*>(bufV_);
         
-        for (size_t i = 0; i < blockSize_; i ++) {
-            buf_[i] = static_cast<char>(getRandomInt(256));
+        for (size_t i = 0; i < blockSize_; i++) {
+            buf_[i] = static_cast<char>(rand_.get(256));
         }
     }
     ~IoResponseBench() {
@@ -236,7 +243,7 @@ public:
     }
     void execNtimes(size_t n) {
 
-        for (size_t i = 0; i < n; i ++) {
+        for (size_t i = 0; i < n; i++) {
             IoLog log = execBlockIO();
             if (isShowEachResponse_) { rtQ_.push(log); }
             stat_.updateRt(log.response);
@@ -259,18 +266,13 @@ public:
     }
     
 private:
-    int getRandomInt(int max) {
-
-        double maxF = static_cast<double>(max);
-        return static_cast<int>(maxF * (::rand() / (RAND_MAX + 1.0)));
-    }
     /**
      * @return response time.
      */
     IoLog execBlockIO() {
         
         double begin, end;
-        size_t blockId = (size_t)getRandomInt(accessRange_);
+        size_t blockId = rand_.get(accessRange_);
         size_t oft = blockId * blockSize_;
         begin = getTime();
         bool isWrite = false;
@@ -278,7 +280,7 @@ private:
         switch(dev_.getMode()) {
         case READ_MODE:  isWrite = false; break;
         case WRITE_MODE: isWrite = true; break;
-        case MIX_MODE:   isWrite = (getRandomInt(2) == 0); break;
+        case MIX_MODE:   isWrite = (rand_.get(2) == 0); break;
         }
         
         if (isWrite) {
@@ -295,15 +297,6 @@ private:
 
         ::printf("id %d ", threadId_);
         stat_.print();
-    }
-
-    /**
-     * Helper function for constructor.
-     * Do not touch other members.
-     */
-    size_t calcAccessRange(size_t accessRange, size_t blockSize, BlockDevice& dev) {
-    
-        return (accessRange == 0) ? (dev.getDeviceSize() / blockSize) : accessRange;
     }
 };
 
@@ -331,7 +324,7 @@ void worker_start(std::vector<std::future<void> >& workers, int n, const Options
 {
     rtQs.resize(n);
     stats.resize(n);
-    for (int i = 0; i < n; i ++) {
+    for (int i = 0; i < n; i++) {
 
         std::future<void> f = std::async(
             std::launch::async, do_work, i, std::ref(opt), std::ref(rtQs[i]),
@@ -346,12 +339,12 @@ void worker_join(std::vector<std::future<void> >& workers)
                   [](std::future<void>& f) { f.get(); });
 }
 
-void pop_and_show_rtQ(std::queue<IoLog>& rtQ)
+void pop_and_show_logQ(std::queue<IoLog>& logQ)
 {
-    while (! rtQ.empty()) {
-        IoLog& log = rtQ.front();
+    while (! logQ.empty()) {
+        IoLog& log = logQ.front();
         log.print();
-        rtQ.pop();
+        logQ.pop();
     }
 }
 
@@ -360,7 +353,7 @@ void execThreadExperiment(const Options& opt)
     const size_t nthreads = opt.getNthreads();
     assert(nthreads > 0);
 
-    std::vector<std::queue<IoLog> > rtQs;
+    std::vector<std::queue<IoLog> > logQs;
     std::vector<PerformanceStatistics> stats;
     
     std::vector<std::future<void> > workers;
@@ -368,12 +361,12 @@ void execThreadExperiment(const Options& opt)
     std::mutex mutex;
     
     begin = getTime();
-    worker_start(workers, nthreads, opt, rtQs, stats, mutex);
+    worker_start(workers, nthreads, opt, logQs, stats, mutex);
     worker_join(workers);
     end = getTime();
 
-    assert(rtQs.size() == nthreads);
-    std::for_each(rtQs.begin(), rtQs.end(), pop_and_show_rtQ);
+    assert(logQs.size() == nthreads);
+    std::for_each(logQs.begin(), logQs.end(), pop_and_show_logQ);
 
     PerformanceStatistics stat = mergeStats(stats.begin(), stats.end());
     ::printf("---------------\n"
@@ -382,15 +375,191 @@ void execThreadExperiment(const Options& opt)
     printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
 
+/**
+ * Io response bench with aio.
+ */
+class AioResponseBench
+{
+private:
+    const BlockDevice& dev_;
+    const size_t blockSize_;
+    const size_t queueSize_;
+    const size_t accessRange_;
+    const bool isShowEachResponse_;
+    
+    BlockBuffer bb_;
+    Rand<size_t, std::uniform_int_distribution<size_t> > rand_;
+    std::queue<IoLog> logQ_;
+    PerformanceStatistics stat_;
+    Aio aio_;
+    std::function<bool()> decideIsWrite_;
+
+public:
+    AioResponseBench(const BlockDevice& dev, size_t blockSize, size_t queueSize,
+                     size_t accessRange, bool isShowEachResponse)
+        : dev_(dev)
+        , blockSize_(blockSize)
+        , queueSize_(queueSize)
+        , accessRange_(calcAccessRange(accessRange, blockSize, dev))
+        , isShowEachResponse_(isShowEachResponse)
+        , bb_(queueSize * 2, blockSize)
+        , rand_(0, std::numeric_limits<size_t>::max())
+        , logQ_()
+        , stat_()
+        , aio_(dev.getFd(), queueSize)
+        , decideIsWrite_(getDecideIsWrite(dev.getMode())) {
+
+        assert(blockSize_ % 512 == 0);
+        assert(queueSize_ > 0);
+        assert(accessRange_ > 0);
+    }        
+    
+    void execNtimes(size_t nTimes) {
+
+        size_t pending = 0;
+        size_t c = 0;
+
+        // Fill the queue.
+        while (pending < queueSize_ && c < nTimes) {
+            prepareIo(bb_.next());
+            pending++;
+            c++;
+        }
+        aio_.submit();
+        // Wait and fill.
+        while (c < nTimes) {
+            assert(pending == queueSize_);
+
+            waitAnIo();
+            pending--;
+
+            prepareIo(bb_.next()); 
+            pending++;
+            c++;
+            aio_.submit();
+        }
+        // Wait remaining.
+        while (pending > 0) {
+            waitAnIo();
+            pending--;
+        }
+    }
+
+    void execNsecs(size_t nSecs) {
+
+        double begin, end;
+        begin = getTime(); end = begin;
+
+        size_t pending = 0;
+
+        // Fill the queue.
+        while (pending < queueSize_) {
+            prepareIo(bb_.next());
+            pending++;
+        }
+        aio_.submit();
+        // Wait and fill.
+        while (end - begin < static_cast<double>(nSecs)) {
+            assert(pending == queueSize_);
+
+            end = waitAnIo();
+            pending--;
+
+            prepareIo(bb_.next()); 
+            pending++;
+            aio_.submit();
+        }
+        // Wait pending.
+        while (pending > 0) {
+            waitAnIo();
+            pending--;
+        }
+    }
+
+    PerformanceStatistics& getStat() { return stat_; }
+    std::queue<IoLog>& getIoLogQueue() { return logQ_; }
+    
+private:
+    std::function<bool()> getDecideIsWrite(const Mode mode) {
+
+        std::function<bool()> ret;
+        
+        switch(mode) {
+        case READ_MODE:
+            ret = []() { return false; };
+            break;
+        case WRITE_MODE:
+            ret = []() { return true; };
+            break;
+        case MIX_MODE:
+            ret = [&]() { return rand_.get(2) == 0; };
+            break;
+        default:
+            assert(false);
+        }
+        return ret;
+    }
+    
+    void prepareIo(char *buf) {
+
+        size_t blockId = rand_.get(accessRange_);
+        
+        if (decideIsWrite_()) {
+            aio_.prepareWrite(blockId * blockSize_, blockSize_, buf);
+        } else {
+            aio_.prepareRead(blockId * blockSize_, blockSize_, buf);
+        }
+    }
+
+    double waitAnIo() {
+
+        auto ptr = aio_.waitOne();
+        auto log = toIoLog(ptr);
+        stat_.updateRt(log.response);
+        if (isShowEachResponse_) {
+            logQ_.push(log);
+        }
+        return ptr->endTime;
+    }
+    
+    IoLog toIoLog(AioDataPtr ptr) {
+
+        return IoLog(0, ptr->isWrite, ptr->oft / ptr->size,
+                     ptr->beginTime, ptr->endTime - ptr->beginTime);
+    }
+};
+
 void execAioExperiment(const Options& opt)
 {
-    /* now editing */
+    assert(opt.getNthreads() == 0);
+    const size_t queueSize = opt.getQueueSize();
+    assert(queueSize > 0);
+    
+    const bool isDirect = true;
+    BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
+    
+    AioResponseBench bench(bd, opt.getBlockSize(), opt.getQueueSize(),
+                           opt.getAccessRange(),
+                           opt.isShowEachResponse());
+    
+    double begin, end;
+    begin = getTime();
+    if (opt.getPeriod() > 0) {
+        bench.execNsecs(opt.getPeriod());
+    } else {
+        bench.execNtimes(opt.getCount());
+    }
+    end = getTime();
+
+    pop_and_show_logQ(bench.getIoLogQueue());
+    auto& stat = bench.getStat();
+    ::printf("all ");
+    stat.print();
+    printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
 
 int main(int argc, char* argv[])
 {
-    ::srand(::time(0) + ::getpid());
-
     try {
         Options opt(argc, argv);
 
