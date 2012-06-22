@@ -476,7 +476,8 @@ private:
     BlockDevice bd_;
     Aio aio_;
     const size_t maxBlockId_;
-    
+    BlockBuffer bb_;
+
 public:
     /**
      * @param dev block device.
@@ -495,7 +496,8 @@ public:
         , isShowEachResponse_(isShowEachResponse)
         , bd_(name, mode, true)
         , aio_(bd_.getFd(), queueSize)
-        , maxBlockId_(bd_.getDeviceSize() / blockSize) {
+        , maxBlockId_(bd_.getDeviceSize() / blockSize)
+        , bb_(queueSize_ * 2, blockSize_) {
 #if 0
         ::printf("blockSize %zu nThreads %u isShowEachResponse %d\n",
                  blockSize_, nThreads_, isShowEachResponse_);
@@ -511,15 +513,13 @@ public:
      */
     void execNtimes(size_t n, size_t startBlockId) {
 
-        BlockBuffer bb(queueSize_ * 2, blockSize_);
-
         size_t pending = 0;
         size_t blockId = startBlockId;
         size_t endBlockId = std::min(maxBlockId_, startBlockId + n);
 
         /* Fill the queue. */
         while (pending < queueSize_ && blockId < endBlockId) {
-            prepareIo(blockId++, bb.next());
+            prepareIo(blockId++, bb_.next());
             pending++;
         }
         aio_.submit();
@@ -531,7 +531,7 @@ public:
             waitAnIo();
             pending--;
 
-            prepareIo(blockId++, bb.next());
+            prepareIo(blockId++, bb_.next());
             pending++;
             aio_.submit();
         }
@@ -548,8 +548,6 @@ public:
      */
     void execNsecs(size_t runPeriodInSec, size_t startBlockId) {
         
-        BlockBuffer bb(queueSize_ * 2, blockSize_);
-
         size_t pending = 0;
         size_t blockId = startBlockId;
 
@@ -559,7 +557,7 @@ public:
         
         /* Fill the queue. */
         while (pending < queueSize_ && blockId < maxBlockId_) {
-            prepareIo(blockId++, bb.next());
+            prepareIo(blockId++, bb_.next());
             pending++;
         }
         aio_.submit();
@@ -572,7 +570,7 @@ public:
             endTime = waitAnIo();
             pending--;
 
-            prepareIo(blockId++, bb.next());
+            prepareIo(blockId++, bb_.next());
             pending++;
             aio_.submit();
         }
@@ -611,7 +609,7 @@ private:
 
     double waitAnIo() {
 
-        auto ptr = aio_.waitOne();
+        auto* ptr = aio_.waitOne();
         auto log = toIoLog(ptr);
         stat_.updateRt(log.response);
         if (isShowEachResponse_) { 
@@ -620,7 +618,7 @@ private:
         return ptr->endTime;
     }
 
-    IoLog toIoLog(AioDataPtr ptr) {
+    IoLog toIoLog(AioData *ptr) {
 
         return IoLog(0, ptr->isWrite, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);

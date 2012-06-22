@@ -11,6 +11,7 @@
 #include <vector>
 #include <queue>
 #include <unordered_map>
+#include <map>
 #include <string>
 #include <algorithm>
 #include <exception>
@@ -257,8 +258,32 @@ private:
     int fd_;
     size_t queueSize_;
     io_context_t ctx_;
-    std::unordered_map<void *, AioDataPtr> aioMap_;
-    std::queue<AioDataPtr> aioQueue_;
+    std::queue<AioData *> aioQueue_;
+
+    class AioDataBuffer
+    {
+    private:
+        const size_t size_;
+        size_t idx_;
+        std::vector<AioData> aioVec_;
+
+    public:
+        AioDataBuffer(size_t size)
+            : size_(size)
+            , idx_(0)
+            , aioVec_(size) {}
+
+        AioData* next() {
+
+            AioData *ret = &aioVec_[idx_];
+            idx_ = (idx_ + 1) % size_;
+            return ret;
+        }
+    };
+
+    AioDataBuffer aioDataBuf_;
+    std::vector<struct iocb *> iocbs_; /* temporal use for submit. */
+    std::vector<struct io_event> ioEvents_; /* temporal use for wait. */
 
 public:
     /**
@@ -267,7 +292,10 @@ public:
      */
     Aio(int fd, size_t queueSize)
         : fd_(fd)
-        , queueSize_(queueSize) {
+        , queueSize_(queueSize)
+        , aioDataBuf_(queueSize * 2)
+        , iocbs_(queueSize)
+        , ioEvents_(queueSize) {
 
         assert(fd_ > 0);
         ::io_queue_init(queueSize_, &ctx_);
@@ -283,10 +311,14 @@ public:
     /**
      * Prepare a read IO.
      */
-    AioDataPtr prepareRead(off_t oft, size_t size, char* buf) noexcept {
+    bool prepareRead(off_t oft, size_t size, char* buf) noexcept {
 
-        aioQueue_.push(AioDataPtr(new AioData));
-        auto& ptr = aioQueue_.back();
+        if (aioQueue_.size() > queueSize_) {
+            return false;
+        }
+        
+        auto* ptr = aioDataBuf_.next();
+        aioQueue_.push(ptr);
         ptr->isWrite = false;
         ptr->oft = oft;
         ptr->size = size;
@@ -294,16 +326,21 @@ public:
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
         ::io_prep_pread(&ptr->iocb, fd_, buf, size, oft);
-        return ptr;
+        ptr->iocb.data = ptr;
+        return true;
     }
 
     /**
      * Prepare a write IO.
      */
-    AioDataPtr prepareWrite(off_t oft, size_t size, char* buf) noexcept {
+    bool prepareWrite(off_t oft, size_t size, char* buf) noexcept {
 
-        aioQueue_.push(AioDataPtr(new AioData));
-        auto& ptr = aioQueue_.back();
+        if (aioQueue_.size() > queueSize_) {
+            return false;
+        }
+        
+        auto* ptr = aioDataBuf_.next();
+        aioQueue_.push(ptr);
         ptr->isWrite = true;
         ptr->oft = oft;
         ptr->size = size;
@@ -311,7 +348,8 @@ public:
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
         ::io_prep_pwrite(&ptr->iocb, fd_, buf, size, oft);
-        return ptr;
+        ptr->iocb.data = ptr;
+        return true;
     }
 
     /**
@@ -323,16 +361,16 @@ public:
         if (nr == 0) {
             return;
         }
-        std::vector<struct iocb *> iocbs(nr);
+        assert(iocbs_.size() >= nr);
         double beginTime = getTime();
         for (size_t i = 0; i < nr; i++) {
-            auto& ptr = aioQueue_.front();
-            aioMap_.insert(std::make_pair(&ptr->iocb, ptr));
+            auto* ptr = aioQueue_.front();
             aioQueue_.pop();
-            iocbs[i] = &ptr->iocb;
+            iocbs_[i] = &ptr->iocb;
             ptr->beginTime = beginTime;
         }
-        int err = ::io_submit(ctx_, nr, &iocbs[0]);
+        assert(aioQueue_.empty());
+        int err = ::io_submit(ctx_, nr, &iocbs_[0]);
         if (err != static_cast<int>(nr)) {
             /* ::printf("submit error %d.\n", err); */
             throw EofError();
@@ -346,28 +384,24 @@ public:
      * @events event array for temporary use.
      * @aioQueue AioDataPtr of completed IO will be pushed into it.
      */
-    void wait(size_t nr,
-              std::vector<struct io_event>& events,
-              std::queue<AioDataPtr>& aioQueue) {
+    void wait(size_t nr, std::queue<AioData>& aioDataQueue) {
 
-        assert(nr = events.size());
-        
         size_t done = 0;
         bool isError = false;
         while (done < nr) {
-            int tmpNr = ::io_getevents(ctx_, 1, nr - done, &events[done], NULL);
+            int tmpNr = ::io_getevents(ctx_, 1, nr - done, &ioEvents_[done], NULL);
             if (tmpNr < 1) {
                 throw std::runtime_error("io_getevents failed.");
             }
             double endTime = getTime();
             for (size_t i = done; i < done + tmpNr; i++) {
-                auto ptr = aioMap_[events[i].obj];
-                aioMap_.erase(&ptr->iocb);
-                if (events[i].res != ptr->iocb.u.c.nbytes) {
+                auto* iocb = static_cast<struct iocb *>(ioEvents_[i].obj);
+                auto* ptr = static_cast<AioData *>(iocb->data);
+                if (ioEvents_[i].res != ptr->iocb.u.c.nbytes) {
                     isError = true;
                 }
                 ptr->endTime = endTime;
-                aioQueue.push(ptr);
+                aioDataQueue.push(*ptr);
             }
             done += tmpNr;
         }
@@ -381,17 +415,19 @@ public:
      * Wait just one IO completed.
      *
      * @return aio data pointer.
+     *   This data is available at least before calling
+     *   prepareWrite/prepareRead queueSize_ times.
      */
-    AioDataPtr waitOne() {
+    AioData* waitOne() {
 
-        struct io_event event;
+        auto& event = ioEvents_[0];
         int err = ::io_getevents(ctx_, 1, 1, &event, NULL);
         double endTime = getTime();
         if (err != 1) {
             throw std::runtime_error("io_getevents failed.");
         }
-        auto ptr = aioMap_[event.obj];
-        aioMap_.erase(&ptr->iocb);
+        auto* iocb = static_cast<struct iocb *>(event.obj);
+        auto* ptr = static_cast<AioData *>(iocb->data);
         if (event.res != ptr->iocb.u.c.nbytes) {
             // ::printf("waitOne error %lu\n", event.res);
             throw EofError();
@@ -521,10 +557,11 @@ public:
         , idx_(0) {
 
         assert(blockSize % 512 == 0);
-        char *p;
         for (size_t i = 0; i < nr; i++) {
-            int ret = ::posix_memalign((void **)&p, 512, blockSize);
+            char *p = nullptr;
+            int ret = ::posix_memalign((void **)&p, ::getpagesize(), blockSize);
             assert(ret == 0);
+            assert(p != nullptr);
             bufArray_[i] = p;
         }
     }
