@@ -416,7 +416,7 @@ public:
      *
      * @return aio data pointer.
      *   This data is available at least before calling
-     *   prepareWrite/prepareRead queueSize_ times.
+     *   queueSize_ times of prepareWrite/prepareRead.
      */
     AioData* waitOne() {
 
@@ -541,7 +541,7 @@ void printThroughput(size_t blockSize, size_t nio, double periodInSec)
 }
 
 /**
- * Memory buffer for reuse.
+ * Ring buffer for block data.
  */
 class BlockBuffer
 {
