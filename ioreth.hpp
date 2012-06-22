@@ -4,6 +4,6 @@
 #ifndef IORETH_HPP
 #define IORETH_HPP
 
-#define IORETH_VERSION "1.3.0"
+#define IORETH_VERSION "1.3.1"
 
 #endif /* IORETH_HPP */
