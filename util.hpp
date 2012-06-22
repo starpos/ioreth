@@ -559,7 +559,7 @@ public:
         assert(blockSize % 512 == 0);
         for (size_t i = 0; i < nr; i++) {
             char *p = nullptr;
-            int ret = ::posix_memalign((void **)&p, 512, blockSize);
+            int ret = ::posix_memalign((void **)&p, ::getpagesize(), blockSize);
             assert(ret == 0);
             assert(p != nullptr);
             bufArray_[i] = p;
