@@ -323,6 +323,7 @@ public:
         ptr->oft = oft;
         ptr->size = size;
         ptr->buf = buf;
+printf("set buf=%p(%d) in prepareRead\n", buf, (int)size);
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
         ::io_prep_pread(&ptr->iocb, fd_, buf, size, oft);
@@ -428,6 +429,28 @@ public:
         }
         auto* iocb = static_cast<struct iocb *>(event.obj);
         auto* ptr = static_cast<AioData *>(iocb->data);
+printf("waiotOne buf=%p\n", ptr->buf);
+{
+	const char *p = ptr->buf;
+	const size_t margin = 512;
+	const size_t blockSize = 2048;
+	for (int i = 0; i < margin; i++) {
+		if (p[i - margin] != 'P') {
+			printf("ERR %d\n", (int)i);
+			exit(1);
+		}
+		if (p[i + blockSize] != 'Y') {
+			puts("ERR!!!!!!!");
+			puts("dump over 2048");
+			for (int k = 0; k < margin; k++) {
+				unsigned char c = p[i + blockSize + k];
+				printf("%02x(%c) ", c, c);
+				if ((k % 16) == 15) printf("\n");
+			}
+			exit(1);
+		}
+	}
+}
         if (event.res != ptr->iocb.u.c.nbytes) {
             // ::printf("waitOne error %lu\n", event.res);
             throw EofError();
@@ -507,7 +530,23 @@ std::string getDataThroughputString(double throughput)
     const double GIGA = static_cast<double>(1000ULL * 1000ULL * 1000ULL);
     const double MEGA = static_cast<double>(1000ULL * 1000ULL);
     const double KILO = static_cast<double>(1000ULL);
-    
+   
+#if 1
+    char buf[128];
+    if (throughput > GIGA) {
+        throughput /= GIGA;
+        snprintf(buf, sizeof(buf), "%f GB/sec", throughput);
+    } else if (throughput > MEGA) {
+        throughput /= MEGA;
+        snprintf(buf, sizeof(buf), "%f MB/sec", throughput);
+    } else if (throughput > KILO) {
+        throughput /= KILO;
+        snprintf(buf, sizeof(buf), "%f KB/sec", throughput);
+    } else {
+        snprintf(buf, sizeof(buf), "%f B/sec", throughput);
+    }
+	return std::string(buf);
+#else 
     std::stringstream ss;
     if (throughput > GIGA) {
         throughput /= GIGA;
@@ -523,6 +562,7 @@ std::string getDataThroughputString(double throughput)
     }
     
     return ss.str();
+#endif
 }
 
 /**
@@ -549,17 +589,32 @@ private:
     const size_t nr_;
     std::vector<char *> bufArray_;
     size_t idx_;
+	size_t blockSize_;
+	const size_t margin = 512;
         
 public:
     BlockBuffer(size_t nr, size_t blockSize)
         : nr_(nr)
         , bufArray_(nr)
-        , idx_(0) {
+        , idx_(0)
+		, blockSize_(blockSize)
+	{
+		printf("nr=%d, blockSize=%d\n", (int)nr, (int)blockSize);
 
         assert(blockSize % 512 == 0);
         for (size_t i = 0; i < nr; i++) {
             char *p = nullptr;
-            int ret = ::posix_memalign((void **)&p, 512, blockSize);
+            int ret = ::posix_memalign((void **)&p, 512, blockSize + margin * 2);
+#if 1
+			for (size_t j = 0; j < margin; j++) {
+				p[j] = 'P';
+			}
+			p += margin;
+			printf("user allocped %p(real=%p)\n", p, p - margin);
+			for (size_t j = 0; j < margin; j++) {
+				p[blockSize + j] = 'Y';
+			}
+#endif
             assert(ret == 0);
             assert(p != nullptr);
             bufArray_[i] = p;
@@ -569,16 +624,35 @@ public:
     ~BlockBuffer() noexcept {
 
         for (size_t i = 0; i < nr_; i++) {
-            ::free(bufArray_[i]);
+			const char *p = bufArray_[i];
+			printf("free %d user allocped %p(real=%p)\n", (int)i, p, p - margin);
+            ::free(bufArray_[i] - margin);
         }
     }
         
     char* next() {
-
+		check();
         char *ret = bufArray_[idx_];
         idx_ = (idx_ + 1) % nr_;
         return ret;
     }
+	void check() const
+	{
+		puts("check");
+		for (size_t i = 0; i < nr_; i++) {
+			const char *p = bufArray_[i];
+			for (size_t j = 0; j < margin; j++) {
+				if (p[blockSize_ + j] != 'Y') {
+					printf("buffer overrun %d\n", (int)j);
+					exit(1);
+				}
+				if (p[j - margin] != 'P') {
+					printf("buffer overrun %d\n", (int)j);
+					exit(1);
+				}
+			}
+		}
+	}
 };
 
 #endif /* UTIL_HPP */

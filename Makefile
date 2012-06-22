@@ -1,7 +1,7 @@
 .PHONY: all clean
 
-CXX = g++
-CFLAGS = -Wall -std=c++11 -pthread
+CXX = g++-4.7.1
+CFLAGS = -Wall -g -std=c++11 -pthread -Wextra
 ifeq ($(DEBUG),1)
 CFLAGS += -g
 else
@@ -12,7 +12,7 @@ CFLAGS += -pg
 else
 endif
 
-LDFLAGS = -laio
+LDFLAGS = -laio -lpthread
 
 all: iores ioth
 
