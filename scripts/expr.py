@@ -3,6 +3,7 @@
 import os
 import sys
 import util
+import time
 
 from param import *
 
@@ -23,6 +24,7 @@ class Command(ParamsForExpr):
         self.setRunPeriod(ParamsForExpr.runPeriod(self))
         self.setTargetDevice(ParamsForExpr.targetDevice(self))
         self.setStoreEachLog(ParamsForExpr.storeEachLog(self))
+        self.setSleep(ParamsForExpr.sleep(self))
 
     def clone(self):
 
@@ -33,6 +35,7 @@ class Command(ParamsForExpr):
         cmd.setTargetDevice(self.targetDevice())
         cmd.setNThreads(self.nThreads())
         cmd.setBsU(self.bsU())
+        cmd.setSleep(self.sleep())
         return cmd
         
     def pattern(self):
@@ -51,6 +54,8 @@ class Command(ParamsForExpr):
         return self.__bs
     def storeEachLog(self):
         return self.__storeEachLog
+    def sleep(self):
+        return self.__sleep
     
     def setPattern(self, pattern):
         assert(pattern == 'seq' or pattern == 'rnd')
@@ -83,6 +88,10 @@ class Command(ParamsForExpr):
     def setStoreEachLog(self, storeEachLog):
         assert(isinstance(storeEachLog, bool))
         self.__storeEachLog = storeEachLog
+
+    def setSleep(self, sleep):
+        assert(isinstance(sleep, int))
+        self.__sleep = sleep
 
     def optMode(self, mode):
         return {'read':'', 'write':'-w', 'mix':'-m'}[mode]
@@ -140,6 +149,7 @@ def runExpr(rawParams):
         totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
         os.system(totalCmd)
 
+        totalCmdTemplate = "%s |tee %s/res |grep Throughput"
         for loop in xrange(0, cmd.nLoop()):
             resDirPath = cmd.resDirPath(loop)
             if not os.path.exists(resDirPath):
@@ -147,11 +157,13 @@ def runExpr(rawParams):
             if loop == 0:
                 cmdTmp = cmd.clone()
                 #cmdTmp.setStoreEachLog(True)
-                totalCmd = "%s > %s/res" % (cmdTmp.cmdStr(), resDirPath)
+                totalCmd = totalCmdTemplate % (cmdTmp.cmdStr(), resDirPath)
             else:
-                totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
+                totalCmd = totalCmdTemplate % (cmdStr, resDirPath)
             print totalCmd #debug
             os.system(totalCmd)
+            if cmd.sleep() > 0:
+                time.sleep(cmd.sleep())
     
 def main():
     rawParams = getParams(sys.argv[1])

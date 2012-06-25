@@ -272,6 +272,7 @@ class ParamsForExpr(ParamsChecker):
         self.nThreadsListCheck()
         self.blockSizeUnitListCheck()
         self.checkParam('storeEachLog', bool)
+        self.checkParamMaybe('sleep', int)
 
     def iores(self):
         return self.get('iores')
@@ -299,6 +300,9 @@ class ParamsForExpr(ParamsChecker):
 
     def storeEachLog(self):
         return self.get('storeEachLog')
+
+    def sleep(self):
+        return self.getMaybe('sleep', default=0)
 
     def paramIter(self):
         """
@@ -350,7 +354,6 @@ class ParamsForReport(ParamsChecker):
             self.checkParamList('widthList', str)
             self.checkParamMaybe('histogramWidthPx', int)
             self.checkParamMaybe('histogramHeightPx', int)
-            
 
     def titleName(self):
         return self.get('titleName')
