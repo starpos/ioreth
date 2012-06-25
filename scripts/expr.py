@@ -97,8 +97,13 @@ class Command(ParamsForExpr):
             return ''
 
     def cmdStr(self):
-        return "%s -b %d -p %d -t %d %s %s %s" % \
+        if self.pattern() == "seq":
+            parallelOpt = "-t 0 -q"
+        else:
+            parallelOpt = "-t"
+        return "%s -b %d -p %d %s %d %s %s %s" % \
             (self.binary(self.pattern()), self.bs(), self.runPeriod(),
+             parallelOpt,
              self.nThreads(), self.optR(), self.optMode(self.mode()),
              self.targetDevice())
 
@@ -141,7 +146,7 @@ def runExpr(rawParams):
                 os.makedirs(resDirPath)
             if loop == 0:
                 cmdTmp = cmd.clone()
-                cmdTmp.setStoreEachLog(True)
+                #cmdTmp.setStoreEachLog(True)
                 totalCmd = "%s > %s/res" % (cmdTmp.cmdStr(), resDirPath)
             else:
                 totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
