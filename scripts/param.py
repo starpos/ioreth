@@ -113,17 +113,18 @@ class ParamsChecker(Params):
     def patternModeListCheck(self):
         self.checkParamList('patternModeList', tuple)
         for pattern, mode in self.patternModeList():
-            checkAndThrow(isinstance(pattern, str))
-            checkAndThrow(pattern == 'seq' or pattern == 'rnd')
-            checkAndThrow(isinstance(mode, str))
-            checkAndThrow(mode == 'read' or mode == 'write' or mode == 'mix')
+            checkAndThrow(isinstance(pattern, str), "pattern is not str.")
+            checkAndThrow(pattern == 'seq' or pattern == 'rnd', "pattern must be seq or rnd.")
+            checkAndThrow(isinstance(mode, str),"mode is not str.")
+            checkAndThrow(mode == 'read' or mode == 'write' or mode == 'mix',
+                          "mode must be read or write or mix.")
 
     def blockSizeUnitListCheck(self):
         self.checkParamList('blockSizeUnitList', str)
         for bsU in self.blockSizeUnitList():
             bs = util.u2s(bsU)
-            checkAndThrow(isinstance(bs, int))
-            checkAndThrow(bs > 0)
+            checkAndThrow(isinstance(bs, int), 'bs must be int.')
+            checkAndThrow(bs > 0, 'bs must > 0.')
     
 
 class ParamsForStatPlot(ParamsChecker):
