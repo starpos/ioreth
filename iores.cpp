@@ -195,7 +195,7 @@ private:
     std::queue<IoLog>& rtQ_;
     PerformanceStatistics& stat_;
     bool isShowEachResponse_;
-    Rand<size_t, std::uniform_int_distribution<size_t> > rand_;
+    XorShift128 rand_;
 
     std::mutex& mutex_; //shared among threads.
     
@@ -218,7 +218,7 @@ public:
         , rtQ_(rtQ)
         , stat_(stat)
         , isShowEachResponse_(isShowEachResponse)
-        , rand_(0, std::numeric_limits<size_t>::max())
+        , rand_(getSeed())
         , mutex_(mutex) {
 #if 0
         ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
@@ -297,6 +297,13 @@ private:
 
         ::printf("id %d ", threadId_);
         stat_.print();
+    }
+
+    uint32_t getSeed() const {
+
+        Rand<uint32_t, std::uniform_int_distribution<uint32_t> >
+            rand(0, std::numeric_limits<uint32_t>::max());
+        return rand.get();
     }
 };
 
