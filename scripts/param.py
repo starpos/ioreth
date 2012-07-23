@@ -6,6 +6,7 @@ Make report template with mediawiki format from a parameter file.
 """
 
 __all__ = ['getParams', 'ParamsForStatPlot', 'ParamsForHistogramPlot',
+           'ParamsForMultiPlot',
            'ParamsForExpr', 'ParamsForReport', 'ParamsException']
 
 import re
@@ -202,7 +203,7 @@ class ParamsForStatPlot(ParamsChecker):
         if lower is None:
             lower = '1'
         return Decimal(upper)/Decimal(lower)
-
+    
 
 class ParamsForHistogramPlot(ParamsChecker):
     """
@@ -249,8 +250,87 @@ class ParamsForHistogramPlot(ParamsChecker):
         return self.get('widthList')
 
 
+class ParamsForMultiPlot(ParamsChecker):
+    """
+    Parameters for multi plotting.
     
+    """
+    scaleReStr = r'([0-9]+)(?:/([0-9]+))?'
     
+    def __init__(self, params):
+        ParamsChecker.__init__(self, params)
+        self.checkParams()
+
+    def checkParams(self):
+        ParamsChecker.checkParams(self)
+        self.checkParamList('plotFileList', str)
+        self.checkParamList('legendList', str)
+        l1 = len(self.plotFileList())
+        l2 = len(self.legendList())
+        checkAndThrow(l1 == l2,
+                      "length of plotFileList and legendList is different.")
+        self.checkParam('outDir', str)
+        self.checkParamMaybe('outFileTemplate', str)
+        self.checkParamList('outFileParams', tuple)
+        for t in self.outFileParams():
+            checkAndThrow(len(t) == 4, "%s length is not 4." % str(t))
+        self.checkParam('titleTemplate', str)
+        self.checkParam('targetColumn', str)
+        self.checkParam('yLabel', str)
+        self.checkParamMaybe('patternMap', dict)
+        self.checkParamMaybe('xRange', str)
+        self.checkParamMaybe('scale', str)
+        if 'scale' in self.getParams():
+            checkAndThrow(re.match(ParamsForStatPlot.scaleReStr, self.scaleStr()),
+                          "scale is not pattern '%s'" % ParamsForStatPlot.scaleReStr)
+
+    def plotFileList(self):
+        return self.get('plotFileList')
+
+    def legendList(self):
+        return self.get('legendList')
+    
+    def outDir(self):
+        return self.get('outDir')
+
+    def outFileTemplate(self, default=None):
+        return self.getMaybe('outFileTemplate', default)
+
+    def outFileParams(self):
+        return self.get('outFileParams')
+
+    def titleTemplate(self):
+        return self.get('titleTemplate')
+
+    def targetColumn(self):
+        return self.get('targetColumn')
+
+    def yLabel(self):
+        return self.get('yLabel')
+
+    def patternMap(self, default=None):
+        return self.getMaybe('patternMap', default)
+
+    def xRange(self, default="*:*"):
+        return self.getMaybe('xRange', default)
+
+    def scaleStr(self, default='1'):
+        return self.getMaybe('scale', default)
+    
+    def scale(self, default='1'):
+        """
+        return :: Decimal
+        
+        """
+        m = re.match(ParamsForStatPlot.scaleReStr, self.scaleStr())
+        assert(m is not None)
+        upper = m.group(1)
+        lower = m.group(2)
+        if lower is None:
+            lower = '1'
+        return Decimal(upper)/Decimal(lower)
+
+
 class ParamsForExpr(ParamsChecker):
     """
     Parameters for expreiment.

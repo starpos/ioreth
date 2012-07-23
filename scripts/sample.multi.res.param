@@ -1,0 +1,16 @@
+{
+    'plotFileList': ['plot.plug-per-req.mem/response.plot', 'plot.plug-per-plug.mem/response.plot'],
+    'legendList': ['plug-per-req', 'plug-per-plug'],
+    'outDir': 'join/png',
+    'outFileTemplate': 'res_%s_%s_bs%s.png',
+    'outFileParams': [(pattern, mode, bsU, yRange)
+                      for (pattern,mode) in [('rnd', 'read'), ('rnd', 'write'), ('rnd', 'mix'), ('seq', 'read'), ('seq', 'write)]
+                      for bsU in ['512', '4k', '32k', '256k']
+                      for yRange in [None]],
+    'titleTemplate': 'Response with pattern %s, mode %s, blocksize %s',
+    'targetColumn': 'response',
+    'yLabel': 'Response time [msec]',
+    #'xRange': '0:*',
+    'scale': '1000',
+    'DUMMY': None
+}
