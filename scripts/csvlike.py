@@ -2,12 +2,9 @@
 
 __all__ = ['CsvLike']
 
-import sys
-import os
 import re
-import itertools
 
-from relation import *
+from relation import Relation
 
 class CsvLike(Relation):
   """
