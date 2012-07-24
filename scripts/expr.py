@@ -24,7 +24,10 @@ class Command(ParamsForExpr):
         self.setRunPeriod(ParamsForExpr.runPeriod(self))
         self.setTargetDevice(ParamsForExpr.targetDevice(self))
         self.setStoreEachLog(ParamsForExpr.storeEachLog(self))
+        self.setWarmup(ParamsForExpr.warmup(self))
         self.setSleep(ParamsForExpr.sleep(self))
+        self.setInitCmd(ParamsForExpr.initCmd(self))
+        self.setExitCmd(ParamsForExpr.exitCmd(self))
 
     def clone(self):
 
@@ -54,8 +57,14 @@ class Command(ParamsForExpr):
         return self.__bs
     def storeEachLog(self):
         return self.__storeEachLog
+    def warmup(self):
+        return self.__warmup
     def sleep(self):
         return self.__sleep
+    def initCmd(self):
+        return self.__initCmd
+    def exitCmd(self):
+        return self.__exitCmd
     
     def setPattern(self, pattern):
         assert(pattern == 'seq' or pattern == 'rnd')
@@ -89,9 +98,26 @@ class Command(ParamsForExpr):
         assert(isinstance(storeEachLog, bool))
         self.__storeEachLog = storeEachLog
 
+    def setWarmup(self, warmup):
+        assert(isinstance(warmup, bool))
+        self.__warmup = warmup
+
     def setSleep(self, sleep):
         assert(isinstance(sleep, int))
         self.__sleep = sleep
+
+    def setInitCmd(self, initCmd):
+        if initCmd is None:
+            self.__initCmd = None
+        else:
+            assert(isinstance(initCmd, str))
+            self.__initCmd = initCmd
+    def setExitCmd(self, exitCmd):
+        if exitCmd is None:
+            self.__exitCmd = None
+        else:
+            assert(isinstance(exitCmd, str))
+            self.__exitCmd = exitCmd
 
     def optMode(self, mode):
         return {'read':'', 'write':'-w', 'mix':'-m'}[mode]
@@ -144,10 +170,15 @@ def runExpr(rawParams):
         cmdStr = cmd.cmdStr()
         print cmdStr #debug
 
-        cmdWarmup = cmd.clone()
-        #cmdWarmup.setRunPeriod(1)
-        totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
-        os.system(totalCmd)
+        if cmd.warmup():
+            cmdWarmup = cmd.clone()
+            #cmdWarmup.setRunPeriod(1)
+            totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
+            if cmd.initCmd() is not None:
+                os.system(cmd.initCmd())
+            os.system(totalCmd)
+            if cmd.exitCmd() is not None:
+                os.system(cmd.exitCmd())
 
         totalCmdTemplate = "%s |tee %s/res |grep Throughput"
         for loop in xrange(0, cmd.nLoop()):
@@ -161,7 +192,11 @@ def runExpr(rawParams):
             else:
                 totalCmd = totalCmdTemplate % (cmdStr, resDirPath)
             print totalCmd #debug
+            if cmd.initCmd() is not None:
+                os.system(cmd.initCmd())
             os.system(totalCmd)
+            if cmd.exitCmd() is not None:
+                os.system(cmd.exitCmd())
             if cmd.sleep() > 0:
                 time.sleep(cmd.sleep())
     

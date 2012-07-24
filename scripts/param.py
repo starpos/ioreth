@@ -352,7 +352,10 @@ class ParamsForExpr(ParamsChecker):
         self.nThreadsListCheck()
         self.blockSizeUnitListCheck()
         self.checkParam('storeEachLog', bool)
+        self.checkParam('warmup', bool)
         self.checkParamMaybe('sleep', int)
+        self.checkParamMaybe('initCmd', str)
+        self.checkParamMaybe('exitCmd', str)
 
     def iores(self):
         return self.get('iores')
@@ -381,8 +384,17 @@ class ParamsForExpr(ParamsChecker):
     def storeEachLog(self):
         return self.get('storeEachLog')
 
+    def warmup(self):
+        return self.get('warmup')
+
     def sleep(self):
         return self.getMaybe('sleep', default=0)
+
+    def initCmd(self):
+        return self.getMaybe('initCmd', default=None)
+
+    def exitCmd(self):
+        return self.getMaybe('exitCmd', default=None)
 
     def paramIter(self):
         """
