@@ -195,10 +195,10 @@ def runExpr(rawParams):
             if cmd.initCmd() is not None:
                 os.system(cmd.initCmd())
             os.system(totalCmd)
-            if cmd.exitCmd() is not None:
-                os.system(cmd.exitCmd())
             if cmd.sleep() > 0:
                 time.sleep(cmd.sleep())
+            if cmd.exitCmd() is not None:
+                os.system(cmd.exitCmd())
     
 def main():
     rawParams = getParams(sys.argv[1])
