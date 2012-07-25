@@ -352,7 +352,7 @@ class ParamsForExpr(ParamsChecker):
         self.nThreadsListCheck()
         self.blockSizeUnitListCheck()
         self.checkParam('storeEachLog', bool)
-        self.checkParam('warmup', bool)
+        self.checkParamMaybe('warmup', bool)
         self.checkParamMaybe('sleep', int)
         self.checkParamMaybe('initCmd', str)
         self.checkParamMaybe('exitCmd', str)
@@ -385,7 +385,7 @@ class ParamsForExpr(ParamsChecker):
         return self.get('storeEachLog')
 
     def warmup(self):
-        return self.get('warmup')
+        return self.getMaybe('warmup', default=False)
 
     def sleep(self):
         return self.getMaybe('sleep', default=0)
