@@ -144,6 +144,67 @@ def renderStatistics(f, chartTypes, patterns, blockSizeUs, names=['Default'], pr
         
     #print createTableStr2(map(mapperX, paramsX), map(mapperY, paramsY), matrix)
 
+def renderMulti(f, chartTypeList, patternList, patternModeList,
+                blockSizeUnitList, prefix='', template='%s_%s_%s_bs%s.png',
+                widthPx=640, heightPx=(640 * 3 / 4)):
+    """
+    f :: file
+       file object to write rendered text.
+    chartTypeList :: [str]
+        chart types like 'res', 'iops', 'bps'.
+    patternList :: [str]
+        pattern like 'rnd', 'seq'.
+    patternModeList :: [(pattern :: str, mode :: str)]
+        pattern like 'rnd', 'seq'.
+        mode like 'read', 'write', 'mix'.
+    blockSizeUnitList :: [str]
+        block size with unit like '512', '4k', '32k', '256k'.
+    prefix :: str
+        prefix of filepath
+    template :: str
+        chart file name template with placeholders
+        for chatType, pattern, mode, and blockSizeUnit.
+    widthPx :: int
+        chart width in pixel in the table.
+    heightPx :: int
+        chart height in pixel in the table.
+    return :: None
+
+    """
+    paramsC = [(chartType, pattern)
+              for chartType in chartTypeList
+              for pattern in patternList]
+
+    def mapperC(paramC):
+        d0 = {'res': 'Response', 'iops': 'IOPS', 'bps': 'Throughput'}
+        d1 = {'rnd': 'random', 'seq': 'sequential'}
+        chartType, pattern = paramC
+        return '%s, %s' % (d0[chartType], d1[pattern])
+
+    def mapperX(blockSizeUnit):
+        return "bs %s" % blockSizeUnit
+        
+    def mapperY(paramY):
+        return "mode %s" % paramY
+        
+    for paramC in paramsC:
+        chartType, pattern = paramC
+        print >>f, "==== %s ====" % mapperC(paramC)
+        matrix = []
+        paramsY = map(lambda (_,y): y,
+                      filter(lambda (x,_): x == pattern, patternModeList))
+        for mode in paramsY:
+            line = []
+            for bsU in blockSizeUnitList:
+                fileName = template % (chartType, pattern, mode, bsU)
+                item = '[[%s%s|width=%dpx|height=%dpx]]' % \
+                    (prefix, fileName, widthPx, heightPx)
+                line.append(item)
+                            
+            matrix.append(line)
+        print >>f, createTableStr2(map(mapperX, blockSizeUnitList),
+                                   map(mapperY, paramsY), matrix)
+            
 
 def renderHistogram(f, patternModeList, bsUList, nThreadsList, widthList,
                     prefix='', template='histogram_%s_%s_bs%s_th%s_w%s.png',
@@ -258,6 +319,22 @@ def renderIorethReport(f, params, goals=None, settings=None, conclusion=None):
                          prefixes=map(lambda x: '%s/' % x, statDirList),
                          template=sTemplate,
                          widthPx=widthPx, heightPx=heightPx)
+
+    if params.isPlotMulti():
+        multiDir = params.multiDir()
+        chartTypeList = params.chartTypeList()
+        patternList = params.patternList()
+        patternModeList = params.patternModeList()
+        widthPx = params.multiWidthPx(default=640)
+        heightPx = params.multiHeightPx(default=widthPx * 3 / 4)
+        sTemplate = params.multiChartFileTemplate(
+            default='%s_%s_%s_bs%s.png')
+        print >>f, '=== Performance Statistics (multi) ==='
+        renderMulti(f, chartTypeList, patternList, patternModeList,
+                    blockSizeUnitList,
+                    prefix=('%s/' % multiDir),
+                    template=sTemplate,
+                    widthPx=widthPx, heightPx=heightPx)
     
     if params.isPlotHistogram():
         histogramDir = params.histogramDir()

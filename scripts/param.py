@@ -436,6 +436,17 @@ class ParamsForReport(ParamsChecker):
             self.checkParamList('patternList', str)
             self.checkParamMaybe('statWidthPx', int)
             self.checkParamMaybe('statHeightPx', int)
+
+        self.checkParam('isPlotMulti', bool)
+        if self.isPlotMulti():
+            self.checkParam('multiDir', str)
+            self.checkParamList('chartTypeList', str)
+            self.checkParamMaybe('multiChartFileTemplate', str)
+            self.checkParamList('chartTypeList', str)
+            self.checkParamList('patternList', str)
+            self.patternModeListCheck()
+            self.checkParamMaybe('multiWidthPx', int)
+            self.checkParamMaybe('multiHeightPx', int)
         
         self.checkParam('isPlotHistogram', bool)
         if self.isPlotHistogram():
@@ -478,6 +489,20 @@ class ParamsForReport(ParamsChecker):
     def statChartFileTemplate(self, default=None):
         return self.getMaybe('statChartFileTemplate', default)
 
+    def isPlotMulti(self):
+        return self.get('isPlotMulti')
+
+    def multiDir(self):
+        return self.get('multiDir')
+
+    def multiChartFileTemplate(self, default=None):
+        return self.getMaybe('multiChartFileTemplate', default)
+
+    def multiWidthPx(self, default=None):
+        return self.getMaybe('multiWidthPx', default)
+
+    def multiHeightPx(self, default=None):
+        return self.getMaybe('multiHeightPx', default)
     
     def isPlotHistogram(self):
         return self.get('isPlotHistogram')
