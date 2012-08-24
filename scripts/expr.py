@@ -3,6 +3,7 @@
 import os
 import sys
 import util
+import time
 
 from param import *
 
@@ -23,6 +24,10 @@ class Command(ParamsForExpr):
         self.setRunPeriod(ParamsForExpr.runPeriod(self))
         self.setTargetDevice(ParamsForExpr.targetDevice(self))
         self.setStoreEachLog(ParamsForExpr.storeEachLog(self))
+        self.setWarmup(ParamsForExpr.warmup(self))
+        self.setSleep(ParamsForExpr.sleep(self))
+        self.setInitCmd(ParamsForExpr.initCmd(self))
+        self.setExitCmd(ParamsForExpr.exitCmd(self))
 
     def clone(self):
 
@@ -33,6 +38,7 @@ class Command(ParamsForExpr):
         cmd.setTargetDevice(self.targetDevice())
         cmd.setNThreads(self.nThreads())
         cmd.setBsU(self.bsU())
+        cmd.setSleep(self.sleep())
         return cmd
         
     def pattern(self):
@@ -51,6 +57,14 @@ class Command(ParamsForExpr):
         return self.__bs
     def storeEachLog(self):
         return self.__storeEachLog
+    def warmup(self):
+        return self.__warmup
+    def sleep(self):
+        return self.__sleep
+    def initCmd(self):
+        return self.__initCmd
+    def exitCmd(self):
+        return self.__exitCmd
     
     def setPattern(self, pattern):
         assert(pattern == 'seq' or pattern == 'rnd')
@@ -84,6 +98,27 @@ class Command(ParamsForExpr):
         assert(isinstance(storeEachLog, bool))
         self.__storeEachLog = storeEachLog
 
+    def setWarmup(self, warmup):
+        assert(isinstance(warmup, bool))
+        self.__warmup = warmup
+
+    def setSleep(self, sleep):
+        assert(isinstance(sleep, int))
+        self.__sleep = sleep
+
+    def setInitCmd(self, initCmd):
+        if initCmd is None:
+            self.__initCmd = None
+        else:
+            assert(isinstance(initCmd, str))
+            self.__initCmd = initCmd
+    def setExitCmd(self, exitCmd):
+        if exitCmd is None:
+            self.__exitCmd = None
+        else:
+            assert(isinstance(exitCmd, str))
+            self.__exitCmd = exitCmd
+
     def optMode(self, mode):
         return {'read':'', 'write':'-w', 'mix':'-m'}[mode]
 
@@ -97,8 +132,13 @@ class Command(ParamsForExpr):
             return ''
 
     def cmdStr(self):
-        return "%s -b %d -p %d -t %d %s %s %s" % \
+        if self.pattern() == "seq":
+            parallelOpt = "-t 0 -q"
+        else:
+            parallelOpt = "-t"
+        return "%s -b %d -p %d %s %d %s %s %s" % \
             (self.binary(self.pattern()), self.bs(), self.runPeriod(),
+             parallelOpt,
              self.nThreads(), self.optR(), self.optMode(self.mode()),
              self.targetDevice())
 
@@ -130,23 +170,35 @@ def runExpr(rawParams):
         cmdStr = cmd.cmdStr()
         print cmdStr #debug
 
-        cmdWarmup = cmd.clone()
-        #cmdWarmup.setRunPeriod(1)
-        totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
-        os.system(totalCmd)
+        if cmd.warmup():
+            cmdWarmup = cmd.clone()
+            #cmdWarmup.setRunPeriod(1)
+            totalCmd = '%s > /dev/null' % cmdWarmup.cmdStr()
+            if cmd.initCmd() is not None:
+                os.system(cmd.initCmd())
+            os.system(totalCmd)
+            if cmd.exitCmd() is not None:
+                os.system(cmd.exitCmd())
 
+        totalCmdTemplate = "%s |tee %s/res |grep Throughput"
         for loop in xrange(0, cmd.nLoop()):
             resDirPath = cmd.resDirPath(loop)
             if not os.path.exists(resDirPath):
                 os.makedirs(resDirPath)
             if loop == 0:
                 cmdTmp = cmd.clone()
-                cmdTmp.setStoreEachLog(True)
-                totalCmd = "%s > %s/res" % (cmdTmp.cmdStr(), resDirPath)
+                #cmdTmp.setStoreEachLog(True)
+                totalCmd = totalCmdTemplate % (cmdTmp.cmdStr(), resDirPath)
             else:
-                totalCmd = "%s > %s/res" % (cmdStr, resDirPath)
+                totalCmd = totalCmdTemplate % (cmdStr, resDirPath)
             print totalCmd #debug
+            if cmd.initCmd() is not None:
+                os.system(cmd.initCmd())
             os.system(totalCmd)
+            if cmd.sleep() > 0:
+                time.sleep(cmd.sleep())
+            if cmd.exitCmd() is not None:
+                os.system(cmd.exitCmd())
     
 def main():
     rawParams = getParams(sys.argv[1])

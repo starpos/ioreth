@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 
-__all__ = ['Record', 'Relation', 'join']
+__all__ = ['Record', 'Relation', 'joinRelations']
 
-import sys
-import os
-import re
-import types
 import collections
 import itertools
 
@@ -69,9 +65,11 @@ class Record:
 
   def getKey(self, cols):
     """
+    cols :: [str]
     return :: Record
 
     """
+    assert(isinstance(cols, list))
     idxes = self.__getIndexes(cols, self.schema())
     #print idxes
     raw = self.__getKey(idxes, self.raw())
@@ -122,8 +120,11 @@ class Record:
     return :: [int]
     
     """
+    assert(isinstance(cols, list))
+    assert(isinstance(schema, list))
     m = map(lambda col: schema.index(col), cols)
     return m
+
 
 def testRecord():
   """
@@ -190,6 +191,7 @@ class IterableData:
     return IterableData(util.gplus(self.__iter__(), rhs.__iter__()),
                         reuse=self.__reuse)
 
+
 def testIterableData():
 
   xs = [0, 1, 2, 3, 4]
@@ -225,19 +227,37 @@ class Relation:
     name :: str
       Relation name.
     reuse :: bool
-      True if reuse.
+      True if reuse where all records will be copied.
+      Specify False when you will access the records just once.
 
     """
     assert(isinstance(cols, list))
     
-    self.__cols = cols
-    self.__name = name
+    self.__cols = list(cols) #copy
+    self.__name = str(name) #copy
     self.__reuse = reuse
     self.__idata = IterableData(iterable, reuse=reuse)
 
   def schema(self):
     assert(isinstance(self.__cols, list))
     return self.__cols
+
+  def renameCol(self, oldCol, newCol):
+    """
+    Rename a column name.
+    
+    oldCol :: str
+      old column name.
+    newCol :: str
+      new column name.
+
+    If oldCol not exists, ValueError wil be thrown.
+    
+    """
+    assert(isinstance(oldCol, str))
+    assert(isinstance(newCol, str))
+    i = self.schema().index(oldCol)
+    self.schema[i] = newCol
 
   def name(self):
     return self.__name
@@ -333,7 +353,7 @@ class Relation:
     if cols is not None:
       def getKey(rec):
         assert(isinstance(rec, Record))
-        return rec[cols].raw()
+        return rec[cols]
       g = sorted(self.getRecG(), key=getKey, reverse=reverse)
     elif key is not None:
       g = sorted(self.getRecG(), key=key, reverse=reverse)
@@ -349,10 +369,10 @@ class Relation:
           return 0
       g = sorted(self.getRecG(), cmp=cmpRec, reverse=reverse)
     else:
-      def getKey(rec):
+      def getKey2(rec):
         assert(isinstance(rec, Record))
         return rec.raw()
-      g = sorted(self.getRecG(), key=getKey, reverse=reverse)
+      g = sorted(self.getRecG(), key=getKey2, reverse=reverse)
 
     return Relation(self.schema(),
                     itertools.imap(lambda rec: rec.raw(), g), reuse=reuse)
@@ -500,6 +520,7 @@ class Relation:
     """
     return self.show()
 
+
 def testRelation():
   """
   For test.
@@ -545,31 +566,140 @@ def testRelation():
   # sort
   rel2 = rel.sort(reverse=True)
   print rel2
-  
-  
-def join(rel0, rel1, key=None, pred=None, columns=None):
+
+
+def joinTwoRelations(rawKey, relCols0, relCols1, reuse=False):
   """
   Join two relations.
+  This will execute sort and merge join.
   
-  rel0 :: Relation
-  rel1 :: Relation
-  key :: tuple([str])
+  rawKey :: tuple([str])
       Name of key columns.
-  pred :: Rec -> Rec -> bool
-    key will be used rather than pred.
-  columns :: [str]
-    new names of columns
+      The key columns must be unique in both rel0 and rel1.
+  relCols0 :: (Relation, cols)
+  relCols1 :: (Relation, cols)
+    cols :: [str]
+      Target columns.
+  reuse :: bool
+  return :: Relation
+    joined relations.
   
   """
-  raise "Not yet implemented."
+  rel0, cols0 = relCols0
+  rel1, cols1 = relCols1
+  assert(isinstance(rel0, Relation))
+  assert(isinstance(rel1, Relation))
+  assert(isinstance(cols0, list))
+  assert(isinstance(cols1, list))
+  assert(len(cols0) > 0)
+  assert(len(cols1) > 0)
+  assert(isinstance(rawKey, tuple))
+  assert(len(rawKey) > 0)
 
-  
-def testJoin():
+  # sorted records generator.
+  schema0 = list(rawKey) + cols0
+  schema1 = list(rawKey) + cols1
+  g0 = iter(rel0.sort(cols=list(rawKey)).project(schema0).getG())
+  g1 = iter(rel1.sort(cols=list(rawKey)).project(schema1).getG())
+
+  # merged records generator.
+  keySize = len(rawKey)
+  def joinedRawRecG():
+    isEnd = False
+    try:
+      rawRec0 = g0.next()
+      rawRec1 = g1.next()
+    except StopIteration:
+      isEnd = True
+      for _ in []:
+        yield
+    while not isEnd:
+      try:
+        if rawRec0[:keySize] == rawRec1[:keySize]:
+          yield rawRec0[:keySize] + rawRec0[keySize:] + rawRec1[keySize:]
+          rawRec0 = g0.next()
+          rawRec1 = g1.next()
+        elif rawRec0[:keySize] < rawRec0[:keySize]:
+          rawRec0 = g0.next()
+        else:
+          rawRec1 = g1.next()
+      except StopIteration:
+        isEnd = True
+
+  retSchema = list(rawKey) + cols0 + cols1
+  return Relation(retSchema, joinedRawRecG(), reuse=reuse)
+
+
+def testJoinRel():
   pass
 
 
+def joinRelations(rawKey, relColsList, reuse=False):
+  """
+  Join multiple relations with a key.
+  This will execute sort and merge join n-1 times
+  where n is len(relColsList)
+  
+  rawKey :: tuple([str])
+    The key must be unique.
+  relColsList :: [(rel, cols)]
+    rel :: Relation
+    cols :: [str]
+      target columns.
+    Each column name must be unique.
+  return :: Relation
+    joined relation with the key and target columns.
+  
+  """
+  assert(isinstance(rawKey, tuple))
+  for col in rawKey:
+    assert(isinstance(col, str))
+  assert(isinstance(relColsList, list))
+  assert(len(relColsList) >= 2)
+  for rel, cols in relColsList:
+    assert(isinstance(rel, Relation))
+    assert(isinstance(cols, list))
+    for col in cols:
+      assert(isinstance(col, str))
+      
+  relCols0 = relColsList[0]
+  for relCols1 in relColsList[1:]:
+    relCols0 = joinTwoRelations(rawKey, relCols0, relCols1, reuse=False)
+
+  if reuse:
+    return Relation(relCols0.schema(), relCols0.getG(), reuse=True)
+  else:
+    return relCols0
+
+
+def testJoinRelations():
+
+  cols = ['k1', 'k2', 'v1']
+  rawRecL = [(str(x), str(x), str(x)) for x in range(0, 3)]
+  rel0 = Relation(cols, rawRecL, reuse=True)
+  print rel0.show()
+  
+  cols = ['k1', 'k2', 'v2']
+  rawRecL = [(str(x), str(y), str(x + y))
+             for x in range(0, 3)
+             for y in range(0, 3)]
+  rel1 = Relation(cols, rawRecL, reuse=True)
+  print rel1.show()
+  
+  joined = joinRelations(('k1', 'k2'),
+                         [(rel0, ['v1']), (rel1, ['v2'])], reuse=True)
+  print joined.show()
+
+  cols = ['k1', 'k2', 'v1', 'v2']
+  rawRecL = [(str(x), str(x), str(x), str(x + x)) for x in range(0, 3)]
+  answer = Relation(cols, rawRecL, reuse=True)
+
+  assert(all(map(lambda (x,y): x == y, zip(joined.getL(), answer.getL()))))
+
+  
 def doMain():
-  testRelation()
+  #testRelation()
+  testJoinRelations()
 
 if __name__ == '__main__':
   doMain()

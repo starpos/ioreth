@@ -416,7 +416,7 @@ public:
      *
      * @return aio data pointer.
      *   This data is available at least before calling
-     *   prepareWrite/prepareRead queueSize_ times.
+     *   queueSize_ times of prepareWrite/prepareRead.
      */
     AioData* waitOne() {
 
@@ -541,7 +541,7 @@ void printThroughput(size_t blockSize, size_t nio, double periodInSec)
 }
 
 /**
- * Memory buffer for reuse.
+ * Ring buffer for block data.
  */
 class BlockBuffer
 {
@@ -559,7 +559,7 @@ public:
         assert(blockSize % 512 == 0);
         for (size_t i = 0; i < nr; i++) {
             char *p = nullptr;
-            int ret = ::posix_memalign((void **)&p, ::getpagesize(), blockSize);
+            int ret = ::posix_memalign((void **)&p, 512, blockSize);
             assert(ret == 0);
             assert(p != nullptr);
             bufArray_[i] = p;

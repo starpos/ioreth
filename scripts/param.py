@@ -6,6 +6,7 @@ Make report template with mediawiki format from a parameter file.
 """
 
 __all__ = ['getParams', 'ParamsForStatPlot', 'ParamsForHistogramPlot',
+           'ParamsForMultiPlot',
            'ParamsForExpr', 'ParamsForReport', 'ParamsException']
 
 import re
@@ -113,17 +114,18 @@ class ParamsChecker(Params):
     def patternModeListCheck(self):
         self.checkParamList('patternModeList', tuple)
         for pattern, mode in self.patternModeList():
-            checkAndThrow(isinstance(pattern, str))
-            checkAndThrow(pattern == 'seq' or pattern == 'rnd')
-            checkAndThrow(isinstance(mode, str))
-            checkAndThrow(mode == 'read' or mode == 'write' or mode == 'mix')
+            checkAndThrow(isinstance(pattern, str), "pattern is not str.")
+            checkAndThrow(pattern == 'seq' or pattern == 'rnd', "pattern must be seq or rnd.")
+            checkAndThrow(isinstance(mode, str),"mode is not str.")
+            checkAndThrow(mode == 'read' or mode == 'write' or mode == 'mix',
+                          "mode must be read or write or mix.")
 
     def blockSizeUnitListCheck(self):
         self.checkParamList('blockSizeUnitList', str)
         for bsU in self.blockSizeUnitList():
             bs = util.u2s(bsU)
-            checkAndThrow(isinstance(bs, int))
-            checkAndThrow(bs > 0)
+            checkAndThrow(isinstance(bs, int), 'bs must be int.')
+            checkAndThrow(bs > 0, 'bs must > 0.')
     
 
 class ParamsForStatPlot(ParamsChecker):
@@ -201,7 +203,7 @@ class ParamsForStatPlot(ParamsChecker):
         if lower is None:
             lower = '1'
         return Decimal(upper)/Decimal(lower)
-
+    
 
 class ParamsForHistogramPlot(ParamsChecker):
     """
@@ -248,8 +250,87 @@ class ParamsForHistogramPlot(ParamsChecker):
         return self.get('widthList')
 
 
+class ParamsForMultiPlot(ParamsChecker):
+    """
+    Parameters for multi plotting.
     
+    """
+    scaleReStr = r'([0-9]+)(?:/([0-9]+))?'
     
+    def __init__(self, params):
+        ParamsChecker.__init__(self, params)
+        self.checkParams()
+
+    def checkParams(self):
+        ParamsChecker.checkParams(self)
+        self.checkParamList('plotFileList', str)
+        self.checkParamList('legendList', str)
+        l1 = len(self.plotFileList())
+        l2 = len(self.legendList())
+        checkAndThrow(l1 == l2,
+                      "length of plotFileList and legendList is different.")
+        self.checkParam('outDir', str)
+        self.checkParamMaybe('outFileTemplate', str)
+        self.checkParamList('outFileParams', tuple)
+        for t in self.outFileParams():
+            checkAndThrow(len(t) == 4, "%s length is not 4." % str(t))
+        self.checkParam('titleTemplate', str)
+        self.checkParam('targetColumn', str)
+        self.checkParam('yLabel', str)
+        self.checkParamMaybe('patternMap', dict)
+        self.checkParamMaybe('xRange', str)
+        self.checkParamMaybe('scale', str)
+        if 'scale' in self.getParams():
+            checkAndThrow(re.match(ParamsForStatPlot.scaleReStr, self.scaleStr()),
+                          "scale is not pattern '%s'" % ParamsForStatPlot.scaleReStr)
+
+    def plotFileList(self):
+        return self.get('plotFileList')
+
+    def legendList(self):
+        return self.get('legendList')
+    
+    def outDir(self):
+        return self.get('outDir')
+
+    def outFileTemplate(self, default=None):
+        return self.getMaybe('outFileTemplate', default)
+
+    def outFileParams(self):
+        return self.get('outFileParams')
+
+    def titleTemplate(self):
+        return self.get('titleTemplate')
+
+    def targetColumn(self):
+        return self.get('targetColumn')
+
+    def yLabel(self):
+        return self.get('yLabel')
+
+    def patternMap(self, default=None):
+        return self.getMaybe('patternMap', default)
+
+    def xRange(self, default="*:*"):
+        return self.getMaybe('xRange', default)
+
+    def scaleStr(self, default='1'):
+        return self.getMaybe('scale', default)
+    
+    def scale(self, default='1'):
+        """
+        return :: Decimal
+        
+        """
+        m = re.match(ParamsForStatPlot.scaleReStr, self.scaleStr())
+        assert(m is not None)
+        upper = m.group(1)
+        lower = m.group(2)
+        if lower is None:
+            lower = '1'
+        return Decimal(upper)/Decimal(lower)
+
+
 class ParamsForExpr(ParamsChecker):
     """
     Parameters for expreiment.
@@ -271,6 +352,10 @@ class ParamsForExpr(ParamsChecker):
         self.nThreadsListCheck()
         self.blockSizeUnitListCheck()
         self.checkParam('storeEachLog', bool)
+        self.checkParamMaybe('warmup', bool)
+        self.checkParamMaybe('sleep', int)
+        self.checkParamMaybe('initCmd', str)
+        self.checkParamMaybe('exitCmd', str)
 
     def iores(self):
         return self.get('iores')
@@ -298,6 +383,18 @@ class ParamsForExpr(ParamsChecker):
 
     def storeEachLog(self):
         return self.get('storeEachLog')
+
+    def warmup(self):
+        return self.getMaybe('warmup', default=False)
+
+    def sleep(self):
+        return self.getMaybe('sleep', default=0)
+
+    def initCmd(self):
+        return self.getMaybe('initCmd', default=None)
+
+    def exitCmd(self):
+        return self.getMaybe('exitCmd', default=None)
 
     def paramIter(self):
         """
@@ -339,6 +436,17 @@ class ParamsForReport(ParamsChecker):
             self.checkParamList('patternList', str)
             self.checkParamMaybe('statWidthPx', int)
             self.checkParamMaybe('statHeightPx', int)
+
+        self.checkParam('isPlotMulti', bool)
+        if self.isPlotMulti():
+            self.checkParam('multiDir', str)
+            self.checkParamList('chartTypeList', str)
+            self.checkParamMaybe('multiChartFileTemplate', str)
+            self.checkParamList('chartTypeList', str)
+            self.checkParamList('patternList', str)
+            self.patternModeListCheck()
+            self.checkParamMaybe('multiWidthPx', int)
+            self.checkParamMaybe('multiHeightPx', int)
         
         self.checkParam('isPlotHistogram', bool)
         if self.isPlotHistogram():
@@ -349,7 +457,6 @@ class ParamsForReport(ParamsChecker):
             self.checkParamList('widthList', str)
             self.checkParamMaybe('histogramWidthPx', int)
             self.checkParamMaybe('histogramHeightPx', int)
-            
 
     def titleName(self):
         return self.get('titleName')
@@ -382,6 +489,20 @@ class ParamsForReport(ParamsChecker):
     def statChartFileTemplate(self, default=None):
         return self.getMaybe('statChartFileTemplate', default)
 
+    def isPlotMulti(self):
+        return self.get('isPlotMulti')
+
+    def multiDir(self):
+        return self.get('multiDir')
+
+    def multiChartFileTemplate(self, default=None):
+        return self.getMaybe('multiChartFileTemplate', default)
+
+    def multiWidthPx(self, default=None):
+        return self.getMaybe('multiWidthPx', default)
+
+    def multiHeightPx(self, default=None):
+        return self.getMaybe('multiHeightPx', default)
     
     def isPlotHistogram(self):
         return self.get('isPlotHistogram')

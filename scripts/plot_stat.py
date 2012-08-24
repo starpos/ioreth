@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 
+'''
+Plot performance data.
+
+Each plot is (pattern, bs).
+Graph legends are modes that are [read, write, (mix)].
+
+'''
 import sys
 import os
 import re
