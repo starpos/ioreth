@@ -17,9 +17,9 @@ LDFLAGS = -laio
 all: iores ioth
 
 iores: iores.o
-	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $<
+	$(CXX) $(CFLAGS) -o $@ $< $(LDFLAGS)
 ioth: ioth.o
-	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $<
+	$(CXX) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 .cpp.o:
 	$(CXX) $(CFLAGS) -c $<
