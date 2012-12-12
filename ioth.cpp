@@ -50,7 +50,7 @@ private:
     bool isShowEachResponse_;
     bool isShowVersion_;
     bool isShowHelp_;
-    
+
     size_t period_;
     size_t count_;
     size_t nthreads_;
@@ -82,7 +82,7 @@ public:
 
         ::printf("iores version %s\n", IORETH_VERSION);
     }
-    
+
     void showHelp() {
 
         ::printf("usage: %s [option(s)] [file or device]\n"
@@ -119,7 +119,7 @@ private:
     void parse(int argc, char* argv[]) {
 
         programName_ = argv[0];
-        
+
         while (1) {
             int c = ::getopt(argc, argv, "s:b:p:c:t:q:wrvh");
 
@@ -193,7 +193,7 @@ private:
     const unsigned queueSize_;
     const bool isShowEachResponse_;
     size_t maxBlockId_;
-    
+
     class ThreadLocalData
     {
     private:
@@ -234,7 +234,7 @@ private:
             stat_ = rhs.stat_;
             return *this;
         }
-        
+
         ~ThreadLocalData() noexcept { free(buf_); }
 
         BlockDevice& getBlockDevice() { return bd_; }
@@ -244,7 +244,7 @@ private:
         PerformanceStatistics& getPerformanceStatistics() { return stat_; }
 
     private:
-        
+
     };
     std::vector<ThreadLocalData> threadLocal_;
 
@@ -253,7 +253,7 @@ public:
      * @param dev block device.
      * @param bs block size.
      * @param nBlocks disk size as number of blocks.
-     * @param startBlockId 
+     * @param startBlockId
      */
     IoThroughputBench(const std::string& name, const Mode mode, size_t blockSize,
                       unsigned int nThreads, unsigned queueSize, bool isShowEachResponse)
@@ -293,7 +293,7 @@ public:
             });
 
         size_t endBlockId = std::min(maxBlockId_, startBlockId + n);
-        
+
         for (size_t i = startBlockId; i < endBlockId; i++) {
             threadPool.submit(i);
         }
@@ -307,13 +307,13 @@ public:
      * @startBlockId Start block id [block].
      */
     void execNsecs(size_t runPeriodInSec, size_t startBlockId) {
-        
+
         ThreadPoolWithId<size_t> threadPool(
             nThreads_, queueSize_,
             [&](size_t blockId, unsigned int id) {
                 this->doWork(blockId, id);
             });
-        
+
         std::atomic<bool> shouldStop(false);
         std::thread th([&] {
                 size_t blockId = startBlockId;
@@ -334,14 +334,14 @@ public:
         threadPool.get(); //may throw an exception.
                           //if errors have been occurred.
     }
-    
+
     PerformanceStatistics getStat(unsigned int id) {
 
         return threadLocal_[id].getPerformanceStatistics();
     }
 
     PerformanceStatistics getMergedStat() {
-        
+
         auto li = getStatsList();
         return mergeStats(li.begin(), li.end());
     }
@@ -350,7 +350,7 @@ public:
      * Get the log queue of the thread with 'id'.
      */
     std::queue<IoLog>& getLogQueue(unsigned int id) {
-        
+
         return threadLocal_[id].getLogQueue();
     }
 
@@ -369,7 +369,7 @@ private:
         auto& bd = tLocal.getBlockDevice();
         char* buf = tLocal.getBuffer();
         auto& stat = tLocal.getPerformanceStatistics();
-        
+
         IoLog log = execBlockIO(bd, id, isWrite, blockId, buf);
 
         if (isShowEachResponse_) { tLocal.getLogQueue().push(log); }
@@ -380,11 +380,11 @@ private:
      * @return IO log.
      */
     IoLog execBlockIO(BlockDevice& bd, unsigned int threadId, bool isWrite, size_t blockId, char* buf) {
-        
+
         double begin, end;
         size_t oft = blockId * blockSize_;
         begin = getTime();
-        
+
         if (isWrite) {
             bd.write(oft, blockSize_, buf);
         } else {
@@ -392,7 +392,8 @@ private:
         }
         end = getTime();
 
-        return IoLog(threadId, isWrite, blockId, begin, end - begin);
+        IoType type = isWrite ? IOTYPE_WRITE : IOTYPE_READ;
+        return IoLog(threadId, type, blockId, begin, end - begin);
     }
 
     /**
@@ -416,7 +417,7 @@ void execThreadExperiment(const Options& opt)
     IoThroughputBench bench(
         opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
         opt.getNthreads(), opt.getQueueSize(), opt.isShowEachResponse());
-    
+
     double begin, end;
     begin = getTime();
     try {
@@ -483,7 +484,7 @@ public:
      * @param dev block device.
      * @param bs block size.
      * @param nBlocks disk size as number of blocks.
-     * @param startBlockId 
+     * @param startBlockId
      */
     AioThroughputBench(
         const std::string& name, const Mode mode, size_t blockSize,
@@ -527,7 +528,7 @@ public:
         while (blockId < endBlockId) {
 
             assert(pending == queueSize_);
-            
+
             waitAnIo();
             pending--;
 
@@ -547,14 +548,14 @@ public:
      * @startBlockId Start block id [block].
      */
     void execNsecs(size_t runPeriodInSec, size_t startBlockId) {
-        
+
         size_t pending = 0;
         size_t blockId = startBlockId;
 
         double beginTime, endTime;
         beginTime = getTime();
         endTime = beginTime;
-        
+
         /* Fill the queue. */
         while (pending < queueSize_ && blockId < maxBlockId_) {
             prepareIo(blockId++, bb_.next());
@@ -566,7 +567,7 @@ public:
                && blockId < maxBlockId_) {
 
             assert(pending == queueSize_);
-            
+
             endTime = waitAnIo();
             pending--;
 
@@ -593,7 +594,7 @@ public:
      * Get the log queue of the thread with 'id'.
      */
     std::queue<IoLog>& getLogQueue() {
-        
+
         return logQ_;
     }
 
@@ -612,7 +613,7 @@ private:
         auto* ptr = aio_.waitOne();
         auto log = toIoLog(ptr);
         stat_.updateRt(log.response);
-        if (isShowEachResponse_) { 
+        if (isShowEachResponse_) {
             logQ_.push(log);
         }
         return ptr->endTime;
@@ -620,7 +621,7 @@ private:
 
     IoLog toIoLog(AioData *ptr) {
 
-        return IoLog(0, ptr->isWrite, ptr->oft / ptr->size,
+        return IoLog(0, ptr->type, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);
     }
 };
@@ -633,7 +634,7 @@ void execAioExperiment(const Options& opt)
     AioThroughputBench bench(
         opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
         opt.getNthreads(), opt.getQueueSize(), opt.isShowEachResponse());
-    
+
     double begin, end;
     begin = getTime();
     try {
@@ -686,7 +687,7 @@ int main(int argc, char* argv[])
     } catch (...) {
         ::printf("caught another error.\n");
     }
-    
+
     return 0;
 }
 
