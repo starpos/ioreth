@@ -28,28 +28,35 @@
 #include <linux/fs.h>
 #include <libaio.h>
 
+enum IoType
+{
+    IOTYPE_READ = 0,
+    IOTYPE_WRITE = 1,
+    IOTYPE_FLUSH = 2,
+};
+
 /**
  * Each IO log.
  */
 struct IoLog
 {
     const unsigned int threadId;
-    const bool isWrite;
+    const IoType type;
     const size_t blockId;
     const double startTime; /* unix time [second] */
     const double response; /* [second] */
 
-    IoLog(unsigned int threadId_, bool isWrite_, size_t blockId_,
+    IoLog(unsigned int threadId_, IoType type_, size_t blockId_,
           double startTime_, double response_)
         : threadId(threadId_)
-        , isWrite(isWrite_)
+        , type(type_)
         , blockId(blockId_)
         , startTime(startTime_)
         , response(response_) {}
 
     void print() {
-        ::printf("threadId %d isWrite %d blockId %10zu startTime %.06f response %.06f\n",
-                 threadId, isWrite, blockId, startTime, response);
+        ::printf("threadId %d type %d blockId %10zu startTime %.06f response %.06f\n",
+                 threadId, (int)type, blockId, startTime, response);
     }
 };
 
@@ -59,7 +66,7 @@ static inline double getTime()
     double t;
 
     ::gettimeofday(&tv, NULL);
-    
+
     t = static_cast<double>(tv.tv_sec) +
         static_cast<double>(tv.tv_usec) / 1000000.0;
     return t;
@@ -105,7 +112,7 @@ public:
         deviceSize_= rhs.deviceSize_;
         return *this;
     }
-    
+
     ~BlockDevice() {
 
         if (fd_ > 0) {
@@ -123,7 +130,7 @@ public:
     }
 
     class EofError : public std::exception {};
-    
+
     /**
      * Read data and fill a buffer.
      */
@@ -161,7 +168,7 @@ public:
             s += ret;
         }
     }
-    const Mode getMode() const { return mode_; }
+    Mode getMode() const { return mode_; }
     int getFd() const { return fd_; }
 
 private:
@@ -169,7 +176,7 @@ private:
     /**
      * Helper function for constructor.
      */
-    int openDevice(const std::string& name, const Mode mode, bool isDirect) {
+    int openDevice(const std::string& name, Mode mode, bool isDirect) {
 
         int fd;
         int flags = 0;
@@ -180,16 +187,16 @@ private:
         }
         if (isDirect) { flags |= O_DIRECT; }
 
-        fd = ::open(name_.c_str(), flags);
+        fd = ::open(name.c_str(), flags);
         if (fd < 0) {
             std::stringstream ss;
-            ss << "open failed: " << name_
+            ss << "open failed: " << name
                << " " << ::strerror(errno) << ".";
             throw std::runtime_error(ss.str());
         }
         return fd;
     }
-    
+
     /**
      * Helper function for constructor.
      * Get device size in bytes.
@@ -214,7 +221,7 @@ private:
         } else {
             ret = s.st_size;
         }
-#if 0        
+#if 0
         std::cout << "devicesize: " << ret << std::endl; //debug
 #endif
         return ret;
@@ -226,7 +233,7 @@ private:
  */
 static inline size_t calcAccessRange(
     size_t accessRange, size_t blockSize, const BlockDevice& dev) {
-    
+
     return (accessRange == 0) ? (dev.getDeviceSize() / blockSize) : accessRange;
 }
 
@@ -235,8 +242,8 @@ static inline size_t calcAccessRange(
  */
 struct AioData
 {
+    IoType type;
     struct iocb iocb;
-    bool isWrite;
     off_t oft;
     size_t size;
     char *buf;
@@ -316,10 +323,10 @@ public:
         if (aioQueue_.size() > queueSize_) {
             return false;
         }
-        
+
         auto* ptr = aioDataBuf_.next();
         aioQueue_.push(ptr);
-        ptr->isWrite = false;
+        ptr->type = IOTYPE_READ;
         ptr->oft = oft;
         ptr->size = size;
         ptr->buf = buf;
@@ -338,16 +345,33 @@ public:
         if (aioQueue_.size() > queueSize_) {
             return false;
         }
-        
+
         auto* ptr = aioDataBuf_.next();
         aioQueue_.push(ptr);
-        ptr->isWrite = true;
+        ptr->type = IOTYPE_WRITE;
         ptr->oft = oft;
         ptr->size = size;
         ptr->buf = buf;
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
         ::io_prep_pwrite(&ptr->iocb, fd_, buf, size, oft);
+        ptr->iocb.data = ptr;
+        return true;
+    }
+
+    /**
+     * Prepare a flush IO.
+     */
+    bool prepareFlush() noexcept {
+        auto* ptr = aioDataBuf_.next();
+        aioQueue_.push(ptr);
+        ptr->type = IOTYPE_FLUSH;
+        ptr->oft = 0;
+        ptr->size = 0;
+        ptr->buf = NULL;
+        ptr->beginTime = 0.0;
+        ptr->endTime = 0.0;
+        ::io_prep_fsync(&ptr->iocb, fd_);
         ptr->iocb.data = ptr;
         return true;
     }
@@ -464,7 +488,7 @@ public:
         total_ += rt;
         count_++;
     }
-    
+
     double getMax() const { return max_; }
     double getMin() const { return min_; }
     double getTotal() const { return total_; }
@@ -494,7 +518,7 @@ static inline PerformanceStatistics mergeStats(const T begin, const T end)
             if (min < 0 || min > stat.getMin()) { min = stat.getMin(); }
             count += stat.getCount();
         });
-    
+
     return PerformanceStatistics(total, max, min, count);
 }
 
@@ -507,7 +531,7 @@ std::string getDataThroughputString(double throughput)
     const double GIGA = static_cast<double>(1000ULL * 1000ULL * 1000ULL);
     const double MEGA = static_cast<double>(1000ULL * 1000ULL);
     const double KILO = static_cast<double>(1000ULL);
-    
+
     std::stringstream ss;
     if (throughput > GIGA) {
         throughput /= GIGA;
@@ -521,7 +545,7 @@ std::string getDataThroughputString(double throughput)
     } else {
         ss << throughput << " B/sec";
     }
-    
+
     return ss.str();
 }
 
@@ -549,7 +573,7 @@ private:
     const size_t nr_;
     std::vector<char *> bufArray_;
     size_t idx_;
-        
+
 public:
     BlockBuffer(size_t nr, size_t blockSize)
         : nr_(nr)
@@ -572,7 +596,7 @@ public:
             ::free(bufArray_[i]);
         }
     }
-        
+
     char* next() {
 
         char *ret = bufArray_[idx_];

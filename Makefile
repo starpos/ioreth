@@ -1,7 +1,7 @@
 .PHONY: all clean
 
 CXX = g++
-CFLAGS = -Wall -std=c++11 -pthread
+CFLAGS = -Wall -Wextra -std=c++11 -pthread
 ifeq ($(DEBUG),1)
 CFLAGS += -g
 else

@@ -46,7 +46,7 @@ private:
     bool isShowEachResponse_;
     bool isShowVersion_;
     bool isShowHelp_;
-    
+
     size_t period_;
     size_t count_;
     size_t nthreads_;
@@ -78,7 +78,7 @@ public:
 
         ::printf("iores version %s\n", IORETH_VERSION);
     }
-    
+
     void showHelp() {
 
         ::printf("usage: %s [option(s)] [file or device]\n"
@@ -118,7 +118,7 @@ private:
     void parse(int argc, char* argv[]) {
 
         programName_ = argv[0];
-        
+
         while (1) {
             int c = ::getopt(argc, argv, "s:b:p:c:t:q:wmrvh");
 
@@ -198,7 +198,7 @@ private:
     XorShift128 rand_;
 
     std::mutex& mutex_; //shared among threads.
-    
+
 public:
     /**
      * @param dev block device.
@@ -232,7 +232,7 @@ public:
             throw std::runtime_error("posix_memalign failed");
         }
         buf_ = static_cast<char*>(bufV_);
-        
+
         for (size_t i = 0; i < blockSize_; i++) {
             buf_[i] = static_cast<char>(rand_.get(256));
         }
@@ -264,32 +264,33 @@ public:
         }
         putStat();
     }
-    
+
 private:
     /**
      * @return response time.
      */
     IoLog execBlockIO() {
-        
+
         double begin, end;
         size_t blockId = rand_.get(accessRange_);
         size_t oft = blockId * blockSize_;
         begin = getTime();
         bool isWrite = false;
-        
+
         switch(dev_.getMode()) {
         case READ_MODE:  isWrite = false; break;
         case WRITE_MODE: isWrite = true; break;
         case MIX_MODE:   isWrite = (rand_.get(2) == 0); break;
         }
-        
+        IoType type = isWrite ? IOTYPE_WRITE : IOTYPE_READ;
+
         if (isWrite) {
             dev_.write(oft, blockSize_, buf_);
         } else {
             dev_.read(oft, blockSize_, buf_);
         }
         end = getTime();
-        return IoLog(threadId_, isWrite, blockId, begin, end - begin);
+        return IoLog(threadId_, type, blockId, begin, end - begin);
     }
 
     void putStat() const {
@@ -314,7 +315,7 @@ void do_work(int threadId, const Options& opt,
     const bool isDirect = true;
 
     BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
-    
+
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
                           rtQ, stat, opt.isShowEachResponse(), mutex);
     if (opt.getPeriod() > 0) {
@@ -362,11 +363,11 @@ void execThreadExperiment(const Options& opt)
 
     std::vector<std::queue<IoLog> > logQs;
     std::vector<PerformanceStatistics> stats;
-    
+
     std::vector<std::future<void> > workers;
     double begin, end;
     std::mutex mutex;
-    
+
     begin = getTime();
     worker_start(workers, nthreads, opt, logQs, stats, mutex);
     worker_join(workers);
@@ -394,13 +395,13 @@ private:
     const size_t accessRange_;
     const bool isShowEachResponse_;
     const Mode mode_;
-    
+
     BlockBuffer bb_;
     Rand<size_t, std::uniform_int_distribution<size_t> > rand_;
     std::queue<IoLog> logQ_;
     PerformanceStatistics stat_;
     Aio aio_;
-    
+
 
 public:
     AioResponseBench(const BlockDevice& dev, size_t blockSize, size_t queueSize,
@@ -420,8 +421,8 @@ public:
         assert(blockSize_ % 512 == 0);
         assert(queueSize_ > 0);
         assert(accessRange_ > 0);
-    }        
-    
+    }
+
     void execNtimes(size_t nTimes) {
 
         size_t pending = 0;
@@ -441,7 +442,7 @@ public:
             waitAnIo();
             pending--;
 
-            prepareIo(bb_.next()); 
+            prepareIo(bb_.next());
             pending++;
             c++;
             aio_.submit();
@@ -473,7 +474,7 @@ public:
             end = waitAnIo();
             pending--;
 
-            prepareIo(bb_.next()); 
+            prepareIo(bb_.next());
             pending++;
             aio_.submit();
         }
@@ -486,12 +487,12 @@ public:
 
     PerformanceStatistics& getStat() { return stat_; }
     std::queue<IoLog>& getIoLogQueue() { return logQ_; }
-    
+
 private:
     bool decideIsWrite() {
 
         bool isWrite = false;
-        
+
         switch(mode_) {
         case READ_MODE:
             isWrite = false;
@@ -507,11 +508,11 @@ private:
         }
         return isWrite;
     }
-    
+
     void prepareIo(char *buf) {
 
         size_t blockId = rand_.get(accessRange_);
-        
+
         if (decideIsWrite()) {
             aio_.prepareWrite(blockId * blockSize_, blockSize_, buf);
         } else {
@@ -529,10 +530,10 @@ private:
         }
         return ptr->endTime;
     }
-    
+
     IoLog toIoLog(AioData *ptr) {
 
-        return IoLog(0, ptr->isWrite, ptr->oft / ptr->size,
+        return IoLog(0, ptr->type, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);
     }
 };
@@ -542,14 +543,14 @@ void execAioExperiment(const Options& opt)
     assert(opt.getNthreads() == 0);
     const size_t queueSize = opt.getQueueSize();
     assert(queueSize > 0);
-    
+
     const bool isDirect = true;
     BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
-    
+
     AioResponseBench bench(bd, opt.getBlockSize(), opt.getQueueSize(),
                            opt.getAccessRange(),
                            opt.isShowEachResponse());
-    
+
     double begin, end;
     begin = getTime();
     if (opt.getPeriod() > 0) {
@@ -587,6 +588,6 @@ int main(int argc, char* argv[])
     } catch (...) {
         ::printf("caught another error.\n");
     }
-    
+
     return 0;
 }
