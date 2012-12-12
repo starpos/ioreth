@@ -54,6 +54,13 @@ struct IoLog
         , startTime(startTime_)
         , response(response_) {}
 
+    IoLog(const IoLog& log)
+        : threadId(log.threadId)
+        , type(log.type)
+        , blockId(log.blockId)
+        , startTime(log.startTime)
+        , response(log.response) {}
+
     void print() {
         ::printf("threadId %d type %d blockId %10zu startTime %.06f response %.06f\n",
                  threadId, (int)type, blockId, startTime, response);
@@ -149,6 +156,7 @@ public:
             s += ret;
         }
     }
+
     /**
      * Write data of a buffer.
      */
@@ -168,6 +176,20 @@ public:
             s += ret;
         }
     }
+
+    /**
+     * Flush written data.
+     */
+    void flush() {
+
+        int ret = ::fdatasync(fd_);
+        if (ret) {
+            std::string e("flush failed: ");
+            e += ::strerror(errno);
+            throw std::runtime_error(e);
+        }
+    }
+
     Mode getMode() const { return mode_; }
     int getFd() const { return fd_; }
 
@@ -371,7 +393,7 @@ public:
         ptr->buf = NULL;
         ptr->beginTime = 0.0;
         ptr->endTime = 0.0;
-        ::io_prep_fsync(&ptr->iocb, fd_);
+        ::io_prep_fdsync(&ptr->iocb, fd_);
         ptr->iocb.data = ptr;
         return true;
     }
