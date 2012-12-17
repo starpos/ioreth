@@ -12,7 +12,11 @@ CFLAGS += -pg
 else
 endif
 
-LDFLAGS = -laio
+ifeq ($(STATIC),1)
+LDFLAGS = -static -laio -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
+else
+LDFLAGS = -laio -lpthread
+endif
 
 all: iores ioth
 
