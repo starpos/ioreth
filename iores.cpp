@@ -52,6 +52,7 @@ private:
     size_t nthreads_;
     size_t queueSize_;
     size_t flushInterval_;
+    size_t ignorePeriod_;
 
 public:
     Options(int argc, char* argv[])
@@ -66,7 +67,8 @@ public:
         , count_(0)
         , nthreads_(1)
         , queueSize_(1)
-        , flushInterval_(0) {
+        , flushInterval_(0)
+        , ignorePeriod_(0) {
 
         parse(argc, argv);
 
@@ -99,6 +101,7 @@ public:
                  "             this is meaningfull with -t 0.\n"
                  "    -f nIO:  flush interval [IO]. default: 0.\n"
                  "             0 means flush request will never occur.\n"
+                 "    -i secs: start to measure performance after several seconds.\n"
                  "    -r:      show response of each IO.\n"
                  "    -v:      show version.\n"
                  "    -h:      show this help.\n"
@@ -118,6 +121,7 @@ public:
     size_t getNthreads() const { return nthreads_; }
     size_t getQueueSize() const { return queueSize_; }
     size_t getFlushInterval() const { return flushInterval_; }
+    size_t getIgnorePeriod() const { return ignorePeriod_; }
 
 private:
     void parse(int argc, char* argv[]) {
@@ -125,7 +129,7 @@ private:
         programName_ = argv[0];
 
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:wmrvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wmrvh");
 
             if (c < 0) { break; }
 
@@ -159,6 +163,9 @@ private:
                 break;
             case 'r': /* show each response */
                 isShowEachResponse_ = true;
+                break;
+            case 'i': /* ignore period */
+                ignorePeriod_ = ::atol(optarg);
                 break;
             case 'v': /* show version */
                 isShowVersion_ = true;
@@ -205,6 +212,7 @@ private:
     const bool isShowEachResponse_;
     XorShift128 rand_;
     const size_t flushInterval_;
+    const size_t ignorePeriod_;
 
     std::mutex& mutex_; //shared among threads.
 
@@ -218,7 +226,8 @@ public:
                     size_t accessRange, std::queue<IoLog>& rtQ,
                     PerformanceStatistics& stat,
                     bool isShowEachResponse,
-                    size_t flushInterval, std::mutex& mutex)
+                    size_t flushInterval, size_t ignorePeriod,
+                    std::mutex& mutex)
         : threadId_(threadId)
         , dev_(dev)
         , blockSize_(blockSize)
@@ -230,6 +239,7 @@ public:
         , isShowEachResponse_(isShowEachResponse)
         , rand_(getSeed())
         , flushInterval_(flushInterval)
+        , ignorePeriod_(ignorePeriod)
         , mutex_(mutex) {
 #if 0
         ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
@@ -249,33 +259,40 @@ public:
         }
     }
     ~IoResponseBench() {
-
         ::free(bufV_);
     }
     void execNtimes(size_t n) {
+        const double bgn = getTime();
+        double end = bgn;
 
         for (size_t i = 0; i < n; i++) {
             bool isFlush = flushInterval_ > 0 &&
                 i % flushInterval_ == flushInterval_ - 1;
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
-            if (isShowEachResponse_) { rtQ_.push(log); }
-            stat_.updateRt(log.response);
+            end = log.startTime + log.response;
+            if (ignorePeriod_ > 0 &&
+                end - bgn > static_cast<double>(ignorePeriod_)) {
+                if (isShowEachResponse_) { rtQ_.push(log); }
+                stat_.updateRt(log.response);
+            }
         }
         putStat();
     }
     void execNsecs(size_t n) {
-
-        double begin, end;
-        begin = getTime(); end = begin;
+        const double bgn = getTime();
+        double end = bgn;
         size_t i = 0;
 
-        while (end - begin < static_cast<double>(n)) {
+        while (end - bgn < static_cast<double>(n)) {
             bool isFlush = flushInterval_ > 0 &&
                 i % flushInterval_ == flushInterval_ - 1;
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
-            if (isShowEachResponse_) { rtQ_.push(log); }
-            stat_.updateRt(log.response);
-            end = getTime();
+            end = log.startTime + log.response;
+            if (ignorePeriod_ > 0 &&
+                end - bgn > static_cast<double>(ignorePeriod_)) {
+                if (isShowEachResponse_) { rtQ_.push(log); }
+                stat_.updateRt(log.response);
+            }
             i++;
         }
         putStat();
@@ -286,13 +303,11 @@ private:
      * @return response time.
      */
     IoLog execBlockIO() {
-
-        double begin, end;
+        double bgn = getTime();
         size_t blockId = rand_.get(accessRange_);
         size_t oft = blockId * blockSize_;
-        begin = getTime();
-        bool isWrite = false;
 
+        bool isWrite = false;
         switch(dev_.getMode()) {
         case READ_MODE:  isWrite = false; break;
         case WRITE_MODE: isWrite = true; break;
@@ -305,18 +320,18 @@ private:
         } else {
             dev_.read(oft, blockSize_, buf_);
         }
-        end = getTime();
-        return IoLog(threadId_, type, blockId, begin, end - begin);
+        double end = getTime();
+        return IoLog(threadId_, type, blockId, bgn, end - bgn);
     }
 
     /**
      * @return response time.
      */
     IoLog execFlushIO() {
-        double begin = getTime();
+        double bgn = getTime();
         dev_.flush();
         double end = getTime();
-        return IoLog(threadId_, IOTYPE_FLUSH, 0, begin, end - begin);
+        return IoLog(threadId_, IOTYPE_FLUSH, 0, bgn, end - bgn);
     }
 
     void putStat() const {
@@ -327,7 +342,6 @@ private:
     }
 
     uint32_t getSeed() const {
-
         Rand<uint32_t, std::uniform_int_distribution<uint32_t> >
             rand(0, std::numeric_limits<uint32_t>::max());
         return rand.get();
@@ -344,7 +358,7 @@ void do_work(int threadId, const Options& opt,
 
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
                           rtQ, stat, opt.isShowEachResponse(),
-                          opt.getFlushInterval(), mutex);
+                          opt.getFlushInterval(), opt.getIgnorePeriod(), mutex);
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
@@ -392,10 +406,10 @@ void execThreadExperiment(const Options& opt)
     std::vector<PerformanceStatistics> stats;
 
     std::vector<std::future<void> > workers;
-    double begin, end;
+    double bgn, end, period;
     std::mutex mutex;
 
-    begin = getTime();
+    bgn = getTime();
     worker_start(workers, nthreads, opt, logQs, stats, mutex);
     worker_join(workers);
     end = getTime();
@@ -407,7 +421,13 @@ void execThreadExperiment(const Options& opt)
     ::printf("---------------\n"
              "all ");
     stat.print();
-    printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
+    if (bgn + static_cast<double>(opt.getIgnorePeriod()) < end) {
+        period = end - (bgn + static_cast<double>(opt.getIgnorePeriod()));
+        assert(period > 0);
+        printThroughput(opt.getBlockSize(), stat.getCount(), period);
+    } else {
+        printZeroThroughput();
+    }
 }
 
 /**
@@ -422,6 +442,7 @@ private:
     const size_t accessRange_;
     const bool isShowEachResponse_;
     const size_t flushInterval_;
+    const size_t ignorePeriod_;
     const Mode mode_;
 
     BlockBuffer bb_;
@@ -429,25 +450,27 @@ private:
     std::queue<IoLog> logQ_;
     PerformanceStatistics stat_;
     Aio aio_;
-
+    double bgnTime_;
 
 public:
     AioResponseBench(
         const BlockDevice& dev, size_t blockSize, size_t queueSize,
         size_t accessRange, bool isShowEachResponse,
-        size_t flushInterval)
+        size_t flushInterval, size_t ignorePeriod)
         : dev_(dev)
         , blockSize_(blockSize)
         , queueSize_(queueSize)
         , accessRange_(calcAccessRange(accessRange, blockSize, dev))
         , isShowEachResponse_(isShowEachResponse)
         , flushInterval_(flushInterval)
+        , ignorePeriod_(ignorePeriod)
         , mode_(dev.getMode())
         , bb_(queueSize * 2, blockSize)
         , rand_(0, std::numeric_limits<size_t>::max())
         , logQ_()
         , stat_()
-        , aio_(dev.getFd(), queueSize) {
+        , aio_(dev.getFd(), queueSize)
+        , bgnTime_(0) {
 
         assert(blockSize_ % 512 == 0);
         assert(queueSize_ > 0);
@@ -455,7 +478,7 @@ public:
     }
 
     void execNtimes(size_t nTimes) {
-
+        bgnTime_ = getTime();
         size_t pending = 0;
         size_t c = 0;
 
@@ -492,9 +515,8 @@ public:
     }
 
     void execNsecs(size_t nSecs) {
-
-        double begin, end;
-        begin = getTime(); end = begin;
+        bgnTime_ = getTime();
+        double end = bgnTime_;
         size_t c = 0;
         size_t pending = 0;
 
@@ -506,7 +528,7 @@ public:
         }
         aio_.submit();
         // Wait and fill.
-        while (end - begin < static_cast<double>(nSecs)) {
+        while (end - bgnTime_ < static_cast<double>(nSecs)) {
             assert(pending == queueSize_);
 
             end = waitAnIo();
@@ -536,7 +558,6 @@ public:
 
 private:
     bool decideIsWrite() {
-
         bool isWrite = false;
 
         switch(mode_) {
@@ -556,7 +577,6 @@ private:
     }
 
     void prepareIo(char *buf) {
-
         size_t blockId = rand_.get(accessRange_);
 
         if (decideIsWrite()) {
@@ -567,23 +587,23 @@ private:
     }
 
     double waitAnIo() {
-
         auto* ptr = aio_.waitOne();
         auto log = toIoLog(ptr);
-        stat_.updateRt(log.response);
-        if (isShowEachResponse_) {
-            logQ_.push(log);
+        if (ignorePeriod_ > 0 &&
+            ptr->endTime  - bgnTime_ > static_cast<double>(ignorePeriod_)) {
+            stat_.updateRt(log.response);
+            if (isShowEachResponse_) {
+                logQ_.push(log);
+            }
         }
         return ptr->endTime;
     }
 
     void prepareFlush() {
-
         aio_.prepareFlush();
     }
 
     IoLog toIoLog(AioData *ptr) {
-
         return IoLog(0, ptr->type, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);
     }
@@ -601,22 +621,27 @@ void execAioExperiment(const Options& opt)
     AioResponseBench bench(bd, opt.getBlockSize(), opt.getQueueSize(),
                            opt.getAccessRange(),
                            opt.isShowEachResponse(),
-                           opt.getFlushInterval());
+                           opt.getFlushInterval(),
+                           opt.getIgnorePeriod());
 
-    double begin, end;
-    begin = getTime();
+    double bgn = getTime();
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
         bench.execNtimes(opt.getCount());
     }
-    end = getTime();
+    double end = getTime();
 
     pop_and_show_logQ(bench.getIoLogQueue());
     auto& stat = bench.getStat();
     ::printf("all ");
     stat.print();
-    printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
+    double iPeriod = static_cast<double>(opt.getIgnorePeriod());
+    if (end - bgn > iPeriod) {
+        printThroughput(opt.getBlockSize(), stat.getCount(), end - bgn - iPeriod);
+    } else {
+        printZeroThroughput();
+    }
 }
 
 int main(int argc, char* argv[])

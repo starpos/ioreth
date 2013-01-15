@@ -516,7 +516,13 @@ public:
     double getTotal() const { return total_; }
     size_t getCount() const { return count_; }
 
-    double getAverage() const { return total_ / (double)count_; }
+    double getAverage() const {
+        if (count_ == 0) {
+            return -1.0;
+        } else {
+            return total_ / static_cast<double>(count_);
+        }
+    }
 
     void print() const {
         ::printf("total %.06f count %zu avg %.06f max %.06f min %.06f\n",
@@ -584,6 +590,15 @@ void printThroughput(size_t blockSize, size_t nio, double periodInSec)
     double iops = static_cast<double>(nio) / periodInSec;
     ::printf("Throughput: %.3f B/s %s %.3f iops.\n",
              throughput, getDataThroughputString(throughput).c_str(), iops);
+}
+
+/**
+ * Print zero throuhgput.
+ */
+static inline
+void printZeroThroughput()
+{
+    ::printf("Throughput: 0.0 B/s 0.0 B/sec 0.0 iops.\n");
 }
 
 /**
