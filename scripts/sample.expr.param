@@ -11,5 +11,6 @@
                         [('rnd', 'read'), ('rnd', 'write'), ('rnd', 'mix'),
                          ('seq', 'read'), ('seq', 'write')]],
     'nThreadsList': [1, 2, 4, 8],
+    'ignorePeriod': 1,
     'DUMMY': None
 }

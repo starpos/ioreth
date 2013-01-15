@@ -10,13 +10,13 @@ from param import *
 class Command(ParamsForExpr):
     """
     Experiment command generator.
-    
+
     """
 
     def __init__(self, params):
 
         ParamsForExpr.__init__(self, params)
-        
+
         self.setPattern('rnd')
         self.setMode('read')
         self.setNThreads(1)
@@ -26,6 +26,7 @@ class Command(ParamsForExpr):
         self.setStoreEachLog(ParamsForExpr.storeEachLog(self))
         self.setWarmup(ParamsForExpr.warmup(self))
         self.setSleep(ParamsForExpr.sleep(self))
+        self.setIgnorePeriod(ParamsForExpr.ignorePeriod())
         self.setInitCmd(ParamsForExpr.initCmd(self))
         self.setExitCmd(ParamsForExpr.exitCmd(self))
 
@@ -39,8 +40,9 @@ class Command(ParamsForExpr):
         cmd.setNThreads(self.nThreads())
         cmd.setBsU(self.bsU())
         cmd.setSleep(self.sleep())
+        cmd.setIgnorePeriod(self.ignorePeriod())
         return cmd
-        
+
     def pattern(self):
         return self.__pattern
     def mode(self):
@@ -61,11 +63,13 @@ class Command(ParamsForExpr):
         return self.__warmup
     def sleep(self):
         return self.__sleep
+    def ignorePeriod(self):
+        return self.__ignorePeriod
     def initCmd(self):
         return self.__initCmd
     def exitCmd(self):
         return self.__exitCmd
-    
+
     def setPattern(self, pattern):
         assert(pattern == 'seq' or pattern == 'rnd')
         self.__pattern = pattern
@@ -78,7 +82,7 @@ class Command(ParamsForExpr):
         assert(isinstance(runPeriod, int))
         assert(runPeriod > 0)
         self.__runPeriod = runPeriod
-    
+
     def setTargetDevice(self, targetDevice):
         assert(isinstance(targetDevice, str))
         assert(len(targetDevice) > 0)
@@ -93,7 +97,7 @@ class Command(ParamsForExpr):
         assert(isinstance(util.u2s(bsU), int))
         self.__bsU = bsU
         self.__bs = util.u2s(bsU)
-    
+
     def setStoreEachLog(self, storeEachLog):
         assert(isinstance(storeEachLog, bool))
         self.__storeEachLog = storeEachLog
@@ -105,6 +109,11 @@ class Command(ParamsForExpr):
     def setSleep(self, sleep):
         assert(isinstance(sleep, int))
         self.__sleep = sleep
+
+    def setIgnorePeriod(self, ignorePeriod):
+        assert(isinstance(ignorePeriod, int))
+        assert(ignorePeriod >= 0)
+        self.__ignorePeriod = ignorePeriod
 
     def setInitCmd(self, initCmd):
         if initCmd is None:
@@ -124,7 +133,7 @@ class Command(ParamsForExpr):
 
     def binary(self, pattern):
         return {'seq':self.ioth(), 'rnd':self.iores()}[pattern]
-        
+
     def optR(self):
         if self.storeEachLog():
             return '-r'
@@ -136,11 +145,15 @@ class Command(ParamsForExpr):
             parallelOpt = "-t 0 -q"
         else:
             parallelOpt = "-t"
-        return "%s -b %d -p %d %s %d %s %s %s" % \
+        retS = "%s -b %d -p %d %s %d %s %s %s" % \
             (self.binary(self.pattern()), self.bs(), self.runPeriod(),
-             parallelOpt,
-             self.nThreads(), self.optR(), self.optMode(self.mode()),
+             parallelOpt, self.nThreads(),
+             self.optR(), self.optMode(self.mode()),
              self.targetDevice())
+        if self.pattern() == "seq":
+            return retS
+        else:
+            return retS + (" -i %s" % self.ignorePeriod())
 
     def resDirPath(self, loop):
         assert(isinstance(loop, int))
@@ -152,10 +165,10 @@ class Command(ParamsForExpr):
 def runExpr(rawParams):
     """
     Generate and execute commands using given parameters.
-    
+
     """
     cmdOrig = Command(rawParams)
-    
+
     for pattern, mode, nThreads, bsU in cmdOrig.paramIter():
         assert(isinstance(pattern, str))
         assert(isinstance(mode, str))
@@ -199,7 +212,7 @@ def runExpr(rawParams):
                 time.sleep(cmd.sleep())
             if cmd.exitCmd() is not None:
                 os.system(cmd.exitCmd())
-    
+
 def main():
     rawParams = getParams(sys.argv[1])
     try:

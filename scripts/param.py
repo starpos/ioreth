@@ -21,7 +21,7 @@ def getParams(fileName):
 
     params :: dict(paramName :: str, any)
         Parameter data.
-    
+
     """
     f = open(fileName, 'r')
     s = ''
@@ -41,7 +41,7 @@ def checkAndThrow(predicate, msg="error"):
 class Params:
     """
     Parameters for experiments.
-    
+
     """
 
     def __init__(self, params):
@@ -73,7 +73,7 @@ class Params:
             if (not canBeNone) or (x is not None):
                 checkAndThrow(isinstance(x, typeId),
                               "An item in %s is not the type %s." % (name, str(typeId)))
-        
+
     def checkParams(self):
         checkAndThrow(isinstance(self.__params, dict),
                       "params is not dictionary.")
@@ -83,7 +83,7 @@ class Params:
 
     def getParams(self):
         return self.__params
-            
+
     def get(self, key):
         return self.__params[key]
 
@@ -96,13 +96,13 @@ class Params:
 class ParamsChecker(Params):
     """
     Parameters with cheker methods.
-    
+
     """
 
     def __init__(self, params):
         Params.__init__(self, params)
         self.checkParams()
-        
+
     def checkParams(self):
         Params.checkParams(self)
 
@@ -126,15 +126,15 @@ class ParamsChecker(Params):
             bs = util.u2s(bsU)
             checkAndThrow(isinstance(bs, int), 'bs must be int.')
             checkAndThrow(bs > 0, 'bs must > 0.')
-    
+
 
 class ParamsForStatPlot(ParamsChecker):
     """
     Parameters for statistics plotting.
-    
+
     """
     scaleReStr = r'([0-9]+)(?:/([0-9]+))?'
-    
+
     def __init__(self, params):
         ParamsChecker.__init__(self, params)
         self.checkParams()
@@ -163,7 +163,7 @@ class ParamsForStatPlot(ParamsChecker):
 
     def plotFileList(self):
         return self.get('plotFileList')
-    
+
     def outDirList(self):
         return self.get('outDirList')
 
@@ -190,11 +190,11 @@ class ParamsForStatPlot(ParamsChecker):
 
     def scaleStr(self, default='1'):
         return self.getMaybe('scale', default)
-    
+
     def scale(self, default='1'):
         """
         return :: Decimal
-        
+
         """
         m = re.match(ParamsForStatPlot.scaleReStr, self.scaleStr())
         assert(m is not None)
@@ -203,12 +203,12 @@ class ParamsForStatPlot(ParamsChecker):
         if lower is None:
             lower = '1'
         return Decimal(upper)/Decimal(lower)
-    
+
 
 class ParamsForHistogramPlot(ParamsChecker):
     """
     Parameters for histogram plotting.
-    
+
     """
     def __init__(self, params):
         ParamsChecker.__init__(self, params)
@@ -230,7 +230,7 @@ class ParamsForHistogramPlot(ParamsChecker):
 
     def plotDirList(self):
         return self.get('plotDirList')
-    
+
     def outDirList(self):
         return self.get('outDirList')
 
@@ -239,13 +239,13 @@ class ParamsForHistogramPlot(ParamsChecker):
 
     def patternModeList(self):
         return self.get('patternModeList')
-    
+
     def blockSizeUnitList(self):
         return self.get('blockSizeUnitList')
 
     def nThreadsList(self):
         return self.get('nThreadsList')
-        
+
     def widthList(self):
         return self.get('widthList')
 
@@ -253,10 +253,10 @@ class ParamsForHistogramPlot(ParamsChecker):
 class ParamsForMultiPlot(ParamsChecker):
     """
     Parameters for multi plotting.
-    
+
     """
     scaleReStr = r'([0-9]+)(?:/([0-9]+))?'
-    
+
     def __init__(self, params):
         ParamsChecker.__init__(self, params)
         self.checkParams()
@@ -289,7 +289,7 @@ class ParamsForMultiPlot(ParamsChecker):
 
     def legendList(self):
         return self.get('legendList')
-    
+
     def outDir(self):
         return self.get('outDir')
 
@@ -316,11 +316,11 @@ class ParamsForMultiPlot(ParamsChecker):
 
     def scaleStr(self, default='1'):
         return self.getMaybe('scale', default)
-    
+
     def scale(self, default='1'):
         """
         return :: Decimal
-        
+
         """
         m = re.match(ParamsForStatPlot.scaleReStr, self.scaleStr())
         assert(m is not None)
@@ -334,7 +334,7 @@ class ParamsForMultiPlot(ParamsChecker):
 class ParamsForExpr(ParamsChecker):
     """
     Parameters for expreiment.
-    
+
     """
 
     def __init__(self, params):
@@ -354,6 +354,7 @@ class ParamsForExpr(ParamsChecker):
         self.checkParam('storeEachLog', bool)
         self.checkParamMaybe('warmup', bool)
         self.checkParamMaybe('sleep', int)
+        self.checkParamMaybe('ignorePeriod', int)
         self.checkParamMaybe('initCmd', str)
         self.checkParamMaybe('exitCmd', str)
 
@@ -390,6 +391,9 @@ class ParamsForExpr(ParamsChecker):
     def sleep(self):
         return self.getMaybe('sleep', default=0)
 
+    def ignorePeriod(self):
+        return self.getMaybe('ignorePeriod', default=0)
+
     def initCmd(self):
         return self.getMaybe('initCmd', default=None)
 
@@ -400,7 +404,7 @@ class ParamsForExpr(ParamsChecker):
         """
         return :: generator((str, str, int, str))
             Generator of pattern, mode, nThreads, bsU.
-        
+
         """
         for pattern, mode in self.patternModeList():
             for nThreads in self.nThreadsList():
@@ -415,7 +419,7 @@ class ParamsForExpr(ParamsChecker):
 class ParamsForReport(ParamsChecker):
     """
     Parameters for report.
-    
+
     """
 
     def __init__(self, params):
@@ -426,7 +430,7 @@ class ParamsForReport(ParamsChecker):
         ParamsChecker.checkParams(self)
         self.checkParam('titleName', str)
         self.blockSizeUnitListCheck()
-        
+
         self.checkParam('isPlotStat', bool)
         if self.isPlotStat():
             self.checkParamList('statNameList', str)
@@ -447,7 +451,7 @@ class ParamsForReport(ParamsChecker):
             self.patternModeListCheck()
             self.checkParamMaybe('multiWidthPx', int)
             self.checkParamMaybe('multiHeightPx', int)
-        
+
         self.checkParam('isPlotHistogram', bool)
         if self.isPlotHistogram():
             self.checkParam('histogramDir', str)
@@ -467,7 +471,7 @@ class ParamsForReport(ParamsChecker):
 
     def isPlotStat(self):
         return self.get('isPlotStat')
-    
+
     def statNameList(self):
         return self.get('statNameList')
 
@@ -476,7 +480,7 @@ class ParamsForReport(ParamsChecker):
 
     def chartTypeList(self):
         return self.get('chartTypeList')
-    
+
     def patternList(self):
         return self.get('patternList')
 
@@ -503,7 +507,7 @@ class ParamsForReport(ParamsChecker):
 
     def multiHeightPx(self, default=None):
         return self.getMaybe('multiHeightPx', default)
-    
+
     def isPlotHistogram(self):
         return self.get('isPlotHistogram')
 
