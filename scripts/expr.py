@@ -26,7 +26,7 @@ class Command(ParamsForExpr):
         self.setStoreEachLog(ParamsForExpr.storeEachLog(self))
         self.setWarmup(ParamsForExpr.warmup(self))
         self.setSleep(ParamsForExpr.sleep(self))
-        self.setIgnorePeriod(ParamsForExpr.ignorePeriod())
+        self.setIgnorePeriod(ParamsForExpr.ignorePeriod(self))
         self.setInitCmd(ParamsForExpr.initCmd(self))
         self.setExitCmd(ParamsForExpr.exitCmd(self))
 
