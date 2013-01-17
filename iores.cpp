@@ -270,8 +270,7 @@ public:
                 i % flushInterval_ == flushInterval_ - 1;
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
             end = log.startTime + log.response;
-            if (ignorePeriod_ > 0 &&
-                end - bgn > static_cast<double>(ignorePeriod_)) {
+            if (end - bgn > static_cast<double>(ignorePeriod_)) {
                 if (isShowEachResponse_) { rtQ_.push(log); }
                 stat_.updateRt(log.response);
             }
@@ -288,8 +287,7 @@ public:
                 i % flushInterval_ == flushInterval_ - 1;
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
             end = log.startTime + log.response;
-            if (ignorePeriod_ > 0 &&
-                end - bgn > static_cast<double>(ignorePeriod_)) {
+            if (end - bgn > static_cast<double>(ignorePeriod_)) {
                 if (isShowEachResponse_) { rtQ_.push(log); }
                 stat_.updateRt(log.response);
             }
@@ -406,13 +404,12 @@ void execThreadExperiment(const Options& opt)
     std::vector<PerformanceStatistics> stats;
 
     std::vector<std::future<void> > workers;
-    double bgn, end, period;
     std::mutex mutex;
 
-    bgn = getTime();
+    const double bgn = getTime();
     worker_start(workers, nthreads, opt, logQs, stats, mutex);
     worker_join(workers);
-    end = getTime();
+    const double end = getTime();
 
     assert(logQs.size() == nthreads);
     std::for_each(logQs.begin(), logQs.end(), pop_and_show_logQ);
@@ -421,9 +418,9 @@ void execThreadExperiment(const Options& opt)
     ::printf("---------------\n"
              "all ");
     stat.print();
-    if (bgn + static_cast<double>(opt.getIgnorePeriod()) < end) {
-        period = end - (bgn + static_cast<double>(opt.getIgnorePeriod()));
-        assert(period > 0);
+    const double period =
+        end - bgn - static_cast<double>(opt.getIgnorePeriod());
+    if (period > 0) {
         printThroughput(opt.getBlockSize(), stat.getCount(), period);
     } else {
         printZeroThroughput();
@@ -589,8 +586,7 @@ private:
     double waitAnIo() {
         auto* ptr = aio_.waitOne();
         auto log = toIoLog(ptr);
-        if (ignorePeriod_ > 0 &&
-            ptr->endTime  - bgnTime_ > static_cast<double>(ignorePeriod_)) {
+        if (ptr->endTime  - bgnTime_ > static_cast<double>(ignorePeriod_)) {
             stat_.updateRt(log.response);
             if (isShowEachResponse_) {
                 logQ_.push(log);
@@ -624,21 +620,22 @@ void execAioExperiment(const Options& opt)
                            opt.getFlushInterval(),
                            opt.getIgnorePeriod());
 
-    double bgn = getTime();
+    const double bgn = getTime();
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
         bench.execNtimes(opt.getCount());
     }
-    double end = getTime();
+    const double end = getTime();
 
     pop_and_show_logQ(bench.getIoLogQueue());
     auto& stat = bench.getStat();
     ::printf("all ");
     stat.print();
-    double iPeriod = static_cast<double>(opt.getIgnorePeriod());
-    if (end - bgn > iPeriod) {
-        printThroughput(opt.getBlockSize(), stat.getCount(), end - bgn - iPeriod);
+    const double period =
+        end - bgn - static_cast<double>(opt.getIgnorePeriod());
+    if (period > 0) {
+        printThroughput(opt.getBlockSize(), stat.getCount(), period);
     } else {
         printZeroThroughput();
     }
