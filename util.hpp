@@ -17,6 +17,7 @@
 #include <exception>
 #include <cerrno>
 #include <cstdio>
+#include <stdint.h>
 
 #include <unistd.h>
 #include <time.h>
@@ -33,6 +34,7 @@ enum IoType
     IOTYPE_READ = 0,
     IOTYPE_WRITE = 1,
     IOTYPE_FLUSH = 2,
+    IOTYPE_DISCARD = 3,
 };
 
 /**
@@ -81,7 +83,7 @@ static inline double getTime()
 
 enum Mode
 {
-    READ_MODE, WRITE_MODE, MIX_MODE
+    READ_MODE, WRITE_MODE, MIX_MODE, DISCARD_MODE,
 };
 
 class BlockDevice
@@ -190,6 +192,27 @@ public:
         }
     }
 
+    /**
+     * Discard request.
+     */
+    void discard(off_t oft, size_t size) {
+
+        uint64_t range[2];
+        range[0] = oft;
+        range[1] = size;
+
+        if (deviceSize_ < oft + size) { throw EofError(); }
+        if (mode_ != DISCARD_MODE) {
+            throw std::runtime_error("discard is not permitted.");
+        }
+        int ret = ::ioctl(fd_, BLKDISCARD, &range);
+        if (ret) {
+            std::string e("discard failed: ");
+            e += ::strerror(errno);
+            throw std::runtime_error(e);
+        }
+    }
+
     Mode getMode() const { return mode_; }
     int getFd() const { return fd_; }
 
@@ -203,9 +226,10 @@ private:
         int fd;
         int flags = 0;
         switch (mode) {
-        case READ_MODE:  flags = O_RDONLY; break;
-        case WRITE_MODE: flags = O_WRONLY; break;
-        case MIX_MODE:   flags = O_RDWR;   break;
+        case READ_MODE:    flags = O_RDONLY; break;
+        case WRITE_MODE:   flags = O_WRONLY; break;
+        case MIX_MODE:     flags = O_RDWR;   break;
+        case DISCARD_MODE: flags = O_RDWR;   break;
         }
         if (isDirect) { flags |= O_DIRECT; }
 

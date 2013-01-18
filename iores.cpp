@@ -94,7 +94,8 @@ public:
                  "             -p and -c is exclusive.\n"
                  "    -w:      write instead read.\n"
                  "    -m:      read/write mix instead read.\n"
-                 "             -w and -m is exclusive.\n"
+                 "    -d:      discard instead read.\n"
+                 "             -w, -m, and -d is exclusive.\n"
                  "    -t num:  number of threads in parallel.\n"
                  "             if 0, use aio instead thread.\n"
                  "    -q size: queue size per thread.\n"
@@ -129,7 +130,7 @@ private:
         programName_ = argv[0];
 
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wmrvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wmdrvh");
 
             if (c < 0) { break; }
 
@@ -151,6 +152,9 @@ private:
                 break;
             case 'm': /* mix */
                 mode_ = MIX_MODE;
+                break;
+            case 'd': /* discard */
+                mode_ = DISCARD_MODE;
                 break;
             case 't': /* nthreads */
                 nthreads_ = ::atol(optarg);
@@ -301,24 +305,40 @@ private:
      * @return response time.
      */
     IoLog execBlockIO() {
-        double bgn = getTime();
         size_t blockId = rand_.get(accessRange_);
         size_t oft = blockId * blockSize_;
 
         bool isWrite = false;
+        bool isDiscard = false;
+        IoType type;
         switch(dev_.getMode()) {
-        case READ_MODE:  isWrite = false; break;
-        case WRITE_MODE: isWrite = true; break;
-        case MIX_MODE:   isWrite = (rand_.get(2) == 0); break;
+        case READ_MODE:
+            isWrite = false;
+            type = IOTYPE_READ;
+            break;
+        case WRITE_MODE:
+            isWrite = true;
+            type = IOTYPE_WRITE;
+            break;
+        case MIX_MODE:
+            isWrite = (rand_.get(2) == 0);
+            type = isWrite ? IOTYPE_WRITE : IOTYPE_READ;
+            break;
+        case DISCARD_MODE:
+            isDiscard = true;
+            type = IOTYPE_DISCARD;
         }
-        IoType type = isWrite ? IOTYPE_WRITE : IOTYPE_READ;
 
-        if (isWrite) {
+        double bgn = getTime();
+        if (isDiscard) {
+            dev_.discard(oft, blockSize_);
+        } else if (isWrite) {
             dev_.write(oft, blockSize_, buf_);
         } else {
             dev_.read(oft, blockSize_, buf_);
         }
         double end = getTime();
+
         return IoLog(threadId_, type, blockId, bgn, end - bgn);
     }
 
