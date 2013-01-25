@@ -4,6 +4,10 @@
 #include <random>
 #include <cstdint>
 
+/**
+ * T1 example: uint32_t
+ * T2 example: std::std::uniform_int_distribution<uint32_t>
+ */
 template<class T1, class T2>
 class Rand
 {
