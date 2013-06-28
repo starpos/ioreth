@@ -9,3 +9,7 @@ Usage
 > make
 > ./iores -h # to measure response.
 > ./ioth -h  # to measure throughput.
+
+License
+
+GPLv2 or 3
