@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all clean rebuild
 
 CXX = g++
 CFLAGS = -Wall -Wextra -std=c++11 -pthread
@@ -33,6 +33,9 @@ ioth.o: ioth.cpp util.hpp ioreth.hpp thread_pool.hpp
 
 clean: cleanTest
 	rm -f iores ioth *.o
+rebuild:
+	$(MAKE) clean
+	$(MAKE) all
 
 # for test.
 sample_thread_pool.o: sample_thread_pool.cpp thread_pool.hpp
