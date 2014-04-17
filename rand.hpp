@@ -1,6 +1,4 @@
-#ifndef RAND_HPP
-#define RAND_HPP
-
+#pragma once
 #include <random>
 #include <cstdint>
 
@@ -59,5 +57,3 @@ public:
         return get() % max;
     }
 };
-
-#endif //RAND_HPP

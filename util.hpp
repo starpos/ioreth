@@ -3,9 +3,7 @@
  * @brief Utility header.
  * @author HOSHINO Takashi
  */
-#ifndef UTIL_HPP
-#define UTIL_HPP
-
+#pragma once
 #define _FILE_OFFSET_BITS 64
 
 #include <vector>
@@ -665,5 +663,3 @@ public:
         return ret;
     }
 };
-
-#endif /* UTIL_HPP */

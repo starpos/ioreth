@@ -456,7 +456,6 @@ void execThreadExperiment(const Options& opt)
     printThroughput(opt.getBlockSize(), stat.getCount(), end - begin);
 }
 
-
 /**
  * Asynchronous IO throughptu benchmark.
  * This is single-thread.

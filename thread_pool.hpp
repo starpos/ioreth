@@ -2,9 +2,7 @@
  * thread_pool.hpp - a simple fixed thread pool for c++11.
  * @author HOSHINO Takashi
  */
-#ifndef THREAD_POOL
-#define THREAD_POOL
-
+#pragma once
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -58,7 +56,7 @@ public:
         , queueSize_(queueSize)
         , shouldStop_(false)
         , canSubmit_(true)  {}
-    
+
     virtual ~ThreadPoolBase() throw() {
 
         stop();
@@ -131,7 +129,7 @@ protected:
             workers_.push_back(std::move(th));
         }
     }
-    
+
     bool enqueue(T task) {
 
         std::unique_lock<std::mutex> lk(mutex_);
@@ -191,7 +189,7 @@ public:
 
         TPB::init([&] { this->do_work(); });
     }
-    
+
     ~ThreadPool() throw() {}
 
 private:
@@ -228,7 +226,7 @@ private:
     std::map<std::thread::id, unsigned int> idMap_;
     std::vector<std::promise<void> > promises_;
     std::vector<std::future<void> > futures_;
-    
+
 public:
     ThreadPoolWithId(unsigned int poolSize, unsigned int queueSize,
                      const std::function<void(T, unsigned int)>& workerFuncWithId)
@@ -252,10 +250,10 @@ public:
     }
 
     ~ThreadPoolWithId() throw() {
-        
+
         TPB::stop();
         TPB::join();
-        
+
         bool canThrow = false;
         getDetail(canThrow);
     }
@@ -311,7 +309,7 @@ private:
             while (!TPB::shouldStop_) {
                 try {
                     workerFuncWithId_(TPB::dequeue(), id);
-                    
+
                 } catch (thread_pool::ShouldStopException& e) {
                     break;
                 }
@@ -324,7 +322,7 @@ private:
     }
 
     void getDetail(bool canThrow) {
-        
+
         std::for_each(futures_.begin(), futures_.end(), [&] (std::future<void>& f) {
                 if (f.valid()) {
                     try {
@@ -376,7 +374,7 @@ public:
  * Prepare a function of std::function<T2(T1)> type,
  * an argument of T1 type, and an std::promise<T2> object.
  * Then create an Task instance with them.
- * 
+ *
  * You can run task with run().
  * You can get result by get().
  * Do not call promise.get_future() to construct an instance.
@@ -479,5 +477,3 @@ public:
     }
     void get() { TB::future_.get(); }
 };
-
-#endif /* THREAD_POOL */
