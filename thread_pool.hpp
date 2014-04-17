@@ -354,17 +354,17 @@ class TaskBase
 protected:
     std::promise<T2> promise_;
     std::shared_future<T2> future_;
-    
+
 public:
     explicit TaskBase(std::promise<T2>&& promise)
         : promise_(std::move(promise))
         , future_(promise_.get_future()) {}
     virtual ~TaskBase() throw() {}
+    TaskBase(const TaskBase&) = delete;
+    TaskBase(TaskBase&&) = delete;
+    TaskBase& operator=(const TaskBase&) = delete;
+    TaskBase& operator=(TaskBase&&) = delete;
     bool valid() const { return future_.valid(); }
-private:
-    TaskBase& operator=(const TaskBase& task) { return *this; }
-    TaskBase& operator=(TaskBase&& task) { return *this; }
-    TaskBase(const TaskBase& task) {}
 };
 
 } // namespace thread_pool

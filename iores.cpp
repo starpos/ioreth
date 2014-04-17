@@ -453,7 +453,6 @@ void execThreadExperiment(const Options& opt)
 class AioResponseBench
 {
 private:
-    const BlockDevice& dev_;
     const size_t blockSize_;
     const size_t queueSize_;
     const size_t accessRange_;
@@ -474,8 +473,7 @@ public:
         const BlockDevice& dev, size_t blockSize, size_t queueSize,
         size_t accessRange, bool isShowEachResponse,
         size_t flushInterval, size_t ignorePeriod)
-        : dev_(dev)
-        , blockSize_(blockSize)
+        : blockSize_(blockSize)
         , queueSize_(queueSize)
         , accessRange_(calcAccessRange(accessRange, blockSize, dev))
         , isShowEachResponse_(isShowEachResponse)

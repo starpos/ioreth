@@ -468,7 +468,6 @@ private:
     const std::string name_;
     const Mode mode_;
     const size_t blockSize_; /* [byte] */
-    const unsigned int nThreads_;
     const unsigned int queueSize_;
     const bool isShowEachResponse_;
 
@@ -488,11 +487,10 @@ public:
      */
     AioThroughputBench(
         const std::string& name, const Mode mode, size_t blockSize,
-        unsigned int nThreads, unsigned int queueSize, bool isShowEachResponse)
+        unsigned int queueSize, bool isShowEachResponse)
         : name_(name)
         , mode_(mode)
         , blockSize_(blockSize)
-        , nThreads_(nThreads)
         , queueSize_(queueSize)
         , isShowEachResponse_(isShowEachResponse)
         , bd_(name, mode, true)
@@ -500,13 +498,11 @@ public:
         , maxBlockId_(bd_.getDeviceSize() / blockSize)
         , bb_(queueSize_ * 2, blockSize_) {
 #if 0
-        ::printf("blockSize %zu nThreads %u isShowEachResponse %d\n",
-                 blockSize_, nThreads_, isShowEachResponse_);
+        ::printf("blockSize %zu queueSize %u isShowEachResponse %d\n",
+                 blockSize_, queueSize_, isShowEachResponse_);
 #endif
-        assert(nThreads == 0);
         assert(queueSize > 0);
     }
-    ~AioThroughputBench() noexcept {}
 
     /**
      * @n Number of blocks to issue.
@@ -633,7 +629,7 @@ void execAioExperiment(const Options& opt)
 {
     AioThroughputBench bench(
         opt.getArgs()[0], opt.getMode(), opt.getBlockSize(),
-        opt.getNthreads(), opt.getQueueSize(), opt.isShowEachResponse());
+        opt.getQueueSize(), opt.isShowEachResponse());
 
     double begin, end;
     begin = getTime();
