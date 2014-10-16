@@ -43,6 +43,7 @@ private:
     size_t blockSize_;
     std::vector<std::string> args_;
     Mode mode_;
+    bool dontUseOdirect_;
     bool isShowEachResponse_;
     bool isShowVersion_;
     bool isShowHelp_;
@@ -60,6 +61,7 @@ public:
         , blockSize_(0)
         , args_()
         , mode_(READ_MODE)
+        , dontUseOdirect_(false)
         , isShowEachResponse_(false)
         , isShowVersion_(false)
         , isShowHelp_(false)
@@ -103,6 +105,7 @@ public:
                  "    -f nIO:  flush interval [IO]. default: 0.\n"
                  "             0 means flush request will never occur.\n"
                  "    -i secs: start to measure performance after several seconds.\n"
+                 "    -n:      do not use O_DIRECT.\n"
                  "    -r:      show response of each IO.\n"
                  "    -v:      show version.\n"
                  "    -h:      show this help.\n"
@@ -114,6 +117,7 @@ public:
     size_t getAccessRange() const { return accessRange_; }
     size_t getBlockSize() const { return blockSize_; }
     Mode getMode() const { return mode_; }
+    bool dontUseOdirect() const { return dontUseOdirect_; }
     bool isShowEachResponse() const { return isShowEachResponse_; }
     bool isShowVersion() const { return isShowVersion_; }
     bool isShowHelp() const { return isShowHelp_; }
@@ -130,7 +134,7 @@ private:
         programName_ = argv[0];
 
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wmdrvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wmdrnvh");
 
             if (c < 0) { break; }
 
@@ -170,6 +174,9 @@ private:
                 break;
             case 'i': /* ignore period */
                 ignorePeriod_ = ::atol(optarg);
+                break;
+            case 'n': /* do not use O_DIRECT */
+                dontUseOdirect_ = true;
                 break;
             case 'v': /* show version */
                 isShowVersion_ = true;
@@ -370,7 +377,7 @@ void do_work(int threadId, const Options& opt,
              std::queue<IoLog>& rtQ, PerformanceStatistics& stat,
              std::mutex& mutex)
 {
-    const bool isDirect = true;
+    const bool isDirect = !opt.dontUseOdirect();;
 
     BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
 
