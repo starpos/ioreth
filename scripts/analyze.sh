@@ -20,7 +20,7 @@ get_throughput()
   grep ^Throughput: $resdir/*/*/*/*/*/res \
 |teee 1 |map.py -g 1 -f "lambda x: x.split('/')" \
 |teee 2 |project.py -g 2,6,9,10,11,12,13 \
-|teee 3 |groupby.py -g 3,4,5,6 -v 1,2 \
+|teee 3 |groupby.py -g 3,4,5,6 -v 1,2 -o avg \
 |teee 4 |sort.py -g 1,2,n3,n4 \
 |teee 5 |cat
 }

@@ -70,6 +70,10 @@ class MultiPlot:
       rel2 = self.__filter(rel, self.__pattern, self.__mode, self.__blockSize,
                            tCol, self.__scale)
       legRelList.append((legend, rel2))
+    print legRelList #debug
+    for s, r in legRelList:
+      print s
+      print r
     plotData = self.__toPlotData(legRelList)
     self.__doPlot(plotData, self.__output, self.__title, self.__ylabel,
                   self.__xrange, self.__yrange)
@@ -181,6 +185,9 @@ def plotMultiData(relColLegList, titleTemplate, outputTemplate,
   assert(isinstance(scale, Decimal))
   assert(isinstance(xRange, str))
   assert(isinstance(debug, bool))
+
+  if len(params) == 0:
+    raise "params list is empty."
 
   for pattern, mode, bsU, yRange in params:
     title = titleTemplate % (patternMap[pattern], mode, bsU)
