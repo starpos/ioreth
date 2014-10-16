@@ -20,12 +20,10 @@ endif
 
 all: iores ioth
 
-iores: iores.o
-	$(CXX) $(CFLAGS) -o $@ $< $(LDFLAGS)
-ioth: ioth.o
+%: %.o
 	$(CXX) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-.cpp.o:
+%.o: %.cpp
 	$(CXX) $(CFLAGS) -c $<
 
 iores.o: iores.cpp util.hpp ioreth.hpp rand.hpp
@@ -33,6 +31,7 @@ ioth.o: ioth.cpp util.hpp ioreth.hpp thread_pool.hpp
 
 clean: cleanTest
 	rm -f iores ioth *.o
+
 rebuild:
 	$(MAKE) clean
 	$(MAKE) all
