@@ -35,6 +35,7 @@
 #include "ioreth.hpp"
 #include "util.hpp"
 #include "thread_pool.hpp"
+#include "unit_int.hpp"
 
 /**
  * Parse commane-line arguments as options.
@@ -127,16 +128,16 @@ private:
 
             switch (c) {
             case 's': /* start offset in blocks */
-                startBlockId_ = ::atol(optarg);
+                startBlockId_ = fromUnitIntString(optarg);
                 break;
             case 'b': /* blocksize */
-                blockSize_ = ::atol(optarg);
+                blockSize_ = fromUnitIntString(optarg);
                 break;
             case 'p': /* period */
                 period_ = ::atol(optarg);
                 break;
             case 'c': /* count */
-                count_ = ::atol(optarg);
+                count_ = fromUnitIntString(optarg);
                 break;
             case 'w': /* write */
                 mode_ = WRITE_MODE;

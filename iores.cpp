@@ -34,6 +34,7 @@
 #include "ioreth.hpp"
 #include "util.hpp"
 #include "rand.hpp"
+#include "unit_int.hpp"
 
 class Options
 {
@@ -140,16 +141,16 @@ private:
 
             switch (c) {
             case 's': /* disk access range in blocks */
-                accessRange_ = ::atol(optarg);
+                accessRange_ = fromUnitIntString(optarg);
                 break;
             case 'b': /* blocksize */
-                blockSize_ = ::atol(optarg);
+                blockSize_ = fromUnitIntString(optarg);
                 break;
             case 'p': /* period */
                 period_ = ::atol(optarg);
                 break;
             case 'c': /* count */
-                count_ = ::atol(optarg);
+                count_ = fromUnitIntString(optarg);
                 break;
             case 'w': /* write */
                 mode_ = WRITE_MODE;
