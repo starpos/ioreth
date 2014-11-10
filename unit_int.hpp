@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <exception>
 #include <cinttypes>
+#include <stdarg.h>
 
 /**
  * Formst string with va_list.
