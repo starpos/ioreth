@@ -35,6 +35,8 @@
 #include "util.hpp"
 #include "rand.hpp"
 #include "unit_int.hpp"
+#include "easy_signal.hpp"
+
 
 class Options
 {
@@ -207,6 +209,15 @@ private:
     }
 };
 
+volatile bool g_quit_ = false;
+
+
+void quitHandler(int)
+{
+    g_quit_ = true;
+}
+
+
 /**
  * Single-threaded io response benchmark.
  */
@@ -278,6 +289,7 @@ public:
         double end = bgn;
 
         for (size_t i = 0; i < n; i++) {
+            if (g_quit_) break;
             bool isFlush = flushInterval_ > 0 &&
                 i % flushInterval_ == flushInterval_ - 1;
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
@@ -295,6 +307,7 @@ public:
         size_t i = 0;
 
         while (end - bgn < static_cast<double>(n)) {
+            if (g_quit_) break;
             bool isFlush = flushInterval_ > 0 &&
                 i % flushInterval_ == flushInterval_ - 1;
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
@@ -667,27 +680,30 @@ void execAioExperiment(const Options& opt)
     }
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char* argv[]) try
 {
-    try {
-        Options opt(argc, argv);
+    if (!cybozu::signal::setSignalHandler(quitHandler, {SIGINT, SIGQUIT, SIGABRT, SIGTERM}, false)) {
+        ::printf("could not set signal handler.");
+        ::exit(1);
+    }
 
-        if (opt.isShowVersion()) {
-            opt.showVersion();
-        } else if (opt.isShowHelp()) {
-            opt.showHelp();
+    Options opt(argc, argv);
+
+    if (opt.isShowVersion()) {
+        opt.showVersion();
+    } else if (opt.isShowHelp()) {
+        opt.showHelp();
+    } else {
+        if (opt.getNthreads() == 0) {
+            execAioExperiment(opt);
         } else {
-            if (opt.getNthreads() == 0) {
-                execAioExperiment(opt);
-            } else {
-                execThreadExperiment(opt);
-            }
+            execThreadExperiment(opt);
         }
-    } catch (const std::runtime_error& e) {
-        ::printf("error: %s\n", e.what());
-    } catch (...) {
-        ::printf("caught another error.\n");
     }
 
     return 0;
+} catch (const std::runtime_error& e) {
+    ::fprintf(::stderr, "error: %s\n", e.what());
+} catch (...) {
+    ::fprintf(::stderr, "unknown error.\n");
 }
