@@ -3,4 +3,4 @@
  */
 #pragma once
 
-#define IORETH_VERSION "1.3.5"
+#define IORETH_VERSION "1.3.6"
