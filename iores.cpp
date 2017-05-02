@@ -57,6 +57,7 @@ private:
     size_t queueSize_;
     size_t flushInterval_;
     size_t ignorePeriod_;
+    size_t readPct_;
 
 public:
     Options(int argc, char* argv[])
@@ -73,7 +74,8 @@ public:
         , nthreads_(1)
         , queueSize_(1)
         , flushInterval_(0)
-        , ignorePeriod_(0) {
+        , ignorePeriod_(0)
+        , readPct_(0) {
 
         parse(argc, argv);
 
@@ -98,7 +100,7 @@ public:
                  "    -c num:  number of IOs to execute.\n"
                  "             -p and -c is exclusive.\n"
                  "    -w:      write instead read.\n"
-                 "    -m:      read/write mix instead read.\n"
+                 "    -m pct:  read/write mix instead read. pct means read percentage from 1 to 99.\n"
                  "    -d:      discard instead read.\n"
                  "             -w, -m, and -d is exclusive.\n"
                  "    -t num:  number of threads in parallel.\n"
@@ -130,6 +132,7 @@ public:
     size_t getQueueSize() const { return queueSize_; }
     size_t getFlushInterval() const { return flushInterval_; }
     size_t getIgnorePeriod() const { return ignorePeriod_; }
+    size_t getReadPct() const { return readPct_; }
 
 private:
     void parse(int argc, char* argv[]) {
@@ -159,6 +162,7 @@ private:
                 break;
             case 'm': /* mix */
                 mode_ = MIX_MODE;
+                readPct_ = ::atol(optarg);
                 break;
             case 'd': /* discard */
                 mode_ = DISCARD_MODE;
@@ -206,6 +210,9 @@ private:
         if (nthreads_ == 0 && queueSize_ == 0) {
             throw std::runtime_error("queue size (-q) must be 1 or more when -t 0.");
         }
+        if (readPct_ > 100) {
+            throw std::runtime_error("read percentage must be between 0 and 100.");
+        }
     }
 };
 
@@ -236,6 +243,7 @@ private:
     XorShift128 rand_;
     const size_t flushInterval_;
     const size_t ignorePeriod_;
+    const size_t readPct_;
 
     std::mutex& mutex_; //shared among threads.
 
@@ -249,7 +257,7 @@ public:
                     size_t accessRange, std::queue<IoLog>& rtQ,
                     PerformanceStatistics& stat,
                     bool isShowEachResponse,
-                    size_t flushInterval, size_t ignorePeriod,
+                    size_t flushInterval, size_t ignorePeriod, size_t readPct,
                     std::mutex& mutex)
         : threadId_(threadId)
         , dev_(dev)
@@ -263,6 +271,7 @@ public:
         , rand_(getSeed())
         , flushInterval_(flushInterval)
         , ignorePeriod_(ignorePeriod)
+        , readPct_(readPct)
         , mutex_(mutex) {
 #if 0
         ::printf("blockSize %zu accessRange %zu isShowEachResponse %d\n",
@@ -342,7 +351,7 @@ private:
             type = IOTYPE_WRITE;
             break;
         case MIX_MODE:
-            isWrite = (rand_.get(2) == 0);
+            isWrite = (rand_.get(100) >= readPct_);
             type = isWrite ? IOTYPE_WRITE : IOTYPE_READ;
             break;
         case DISCARD_MODE:
@@ -397,7 +406,7 @@ void do_work(int threadId, const Options& opt,
 
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
                           rtQ, stat, opt.isShowEachResponse(),
-                          opt.getFlushInterval(), opt.getIgnorePeriod(), mutex);
+                          opt.getFlushInterval(), opt.getIgnorePeriod(), opt.getReadPct(), mutex);
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
