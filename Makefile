@@ -3,7 +3,7 @@
 CXX = g++
 CFLAGS = -Wall -Wextra -std=c++11 -pthread
 ifeq ($(DEBUG),1)
-CFLAGS += -g
+CFLAGS += -g -O0
 else
 CFLAGS += -O2
 endif
