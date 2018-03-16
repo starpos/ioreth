@@ -140,7 +140,7 @@ private:
         programName_ = argv[0];
 
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wmdrnvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wm:drnvh");
 
             if (c < 0) { break; }
 
