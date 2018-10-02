@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <stdarg.h>
 
 /**
@@ -38,4 +39,21 @@ inline std::string formatString(const char * format, ...)
     va_end(args);
     if (ep) std::rethrow_exception(ep);
     return s;
+}
+
+
+inline std::vector<std::string> splitString(const std::string& s, const char c)
+{
+    std::vector<std::string> ret;
+    size_t cur = 0;
+    for (;;) {
+        size_t pos = s.find(c, cur);
+        if (pos == std::string::npos) {
+            ret.push_back(s.substr(cur, s.size() - cur));
+            break;
+        }
+        ret.push_back(s.substr(cur, pos - cur));
+        cur = pos + 1;
+    }
+    return ret;
 }
