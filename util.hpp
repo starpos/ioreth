@@ -72,14 +72,12 @@ struct IoLog
 
 static inline double getTime()
 {
-    struct timeval tv;
-    double t;
-
-    ::gettimeofday(&tv, NULL);
-
-    t = static_cast<double>(tv.tv_sec) +
-        static_cast<double>(tv.tv_usec) / 1000000.0;
-    return t;
+    struct timespec ts;
+    if (::clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        throw std::runtime_error(formatString("errno %d", errno).c_str());
+    }
+    return static_cast<double>(ts.tv_sec) +
+        static_cast<double>(ts.tv_nsec) / 1000000000.0;
 }
 
 enum Mode
