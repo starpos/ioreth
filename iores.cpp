@@ -357,6 +357,9 @@ private:
         case DISCARD_MODE:
             isDiscard = true;
             type = IOTYPE_DISCARD;
+            break;
+        default:
+            assert(false);
         }
 
         double bgn = getTime();
