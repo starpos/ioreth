@@ -36,6 +36,7 @@
 #include "rand.hpp"
 #include "unit_int.hpp"
 #include "easy_signal.hpp"
+#include "histogram.hpp"
 
 
 class Options
@@ -48,6 +49,7 @@ private:
     Mode mode_;
     bool dontUseOdirect_;
     bool isShowEachResponse_;
+    bool isShowHistogram_;
     bool isShowVersion_;
     bool isShowHelp_;
 
@@ -59,7 +61,10 @@ private:
     size_t ignorePeriod_;
     size_t readPct_;
 
+
 public:
+    HistogramConfig histogramCfg;
+
     Options(int argc, char* argv[])
         : accessRange_(0)
         , blockSize_(0)
@@ -67,6 +72,7 @@ public:
         , mode_(READ_MODE)
         , dontUseOdirect_(false)
         , isShowEachResponse_(false)
+        , isShowHistogram_(false)
         , isShowVersion_(false)
         , isShowHelp_(false)
         , period_(0)
@@ -75,7 +81,8 @@ public:
         , queueSize_(1)
         , flushInterval_(0)
         , ignorePeriod_(0)
-        , readPct_(0) {
+        , readPct_(0)
+        , histogramCfg() {
 
         parse(argc, argv);
 
@@ -86,12 +93,10 @@ public:
     }
 
     void showVersion() {
-
         ::printf("iores version %s\n", IORETH_VERSION);
     }
 
     void showHelp() {
-
         ::printf("usage: %s [option(s)] [file or device]\n"
                  "options: \n"
                  "    -s size: access range in blocks.\n"
@@ -112,6 +117,7 @@ public:
                  "    -i secs: start to measure performance after several seconds.\n"
                  "    -n:      do not use O_DIRECT.\n"
                  "    -r:      show response of each IO.\n"
+                 "    -H min,max,interval: show histogram with parameters [ms]\n"
                  "    -v:      show version.\n"
                  "    -h:      show this help.\n"
                  , programName_.c_str()
@@ -125,6 +131,7 @@ public:
     bool dontUseOdirect() const { return dontUseOdirect_; }
     bool isShowEachResponse() const { return isShowEachResponse_; }
     bool isShowVersion() const { return isShowVersion_; }
+    bool isShowHistogram() const { return isShowHistogram_; }
     bool isShowHelp() const { return isShowHelp_; }
     size_t getPeriod() const { return period_; }
     size_t getCount() const { return count_; }
@@ -140,7 +147,7 @@ private:
         programName_ = argv[0];
 
         while (1) {
-            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wm:drnvh");
+            int c = ::getopt(argc, argv, "s:b:p:c:t:q:f:i:wm:H:drnvh");
 
             if (c < 0) { break; }
 
@@ -188,6 +195,10 @@ private:
             case 'v': /* show version */
                 isShowVersion_ = true;
                 break;
+            case 'H': /* show histogram */
+                isShowHistogram_ = true;
+                parseHistogramConfig(optarg);
+                break;
             case 'h': /* help */
                 isShowHelp_ = true;
                 break;
@@ -198,9 +209,17 @@ private:
             args_.push_back(argv[optind++]);
         }
     }
-
+    void parseHistogramConfig(const char *optarg) {
+        std::vector<std::string> v = splitString(optarg, ',');
+        if (v.size() != 3) {
+            throw std::runtime_error("3 parameters are required for histogram.");
+        }
+        uint64_t min = ::strtoull(v[0].c_str(), nullptr, 10);
+        uint64_t max = ::strtoull(v[1].c_str(), nullptr, 10);
+        uint64_t interval = ::strtoull(v[2].c_str(), nullptr, 10);
+        histogramCfg.set(min, max, interval);
+    }
     void checkAndThrow() {
-
         if (args_.size() != 1 || blockSize_ == 0) {
             throw std::runtime_error("specify blocksize (-b), and device.");
         }
@@ -225,6 +244,34 @@ void quitHandler(int)
 }
 
 
+std::vector<Histogram> generateHistogram(const HistogramConfig& cfg)
+{
+    std::vector<Histogram> hs(3);
+    for (auto& h : hs) h.reset(cfg);
+    return hs;
+}
+
+
+void addToHistogram(std::vector<Histogram>& hs, const IoLog& log)
+{
+    assert(hs.size() == 3);
+    // 0: read, 1: write, 2: flush/discard
+    size_t idx;
+    switch(log.type) {
+    case IOTYPE_READ:
+        idx = 0;
+        break;
+    case IOTYPE_WRITE:
+        idx = 1;
+        break;
+    default:
+        idx = 2;
+    }
+    uint64_t response_ms = uint64_t(log.response * 1000);
+    hs[idx].add(response_ms);
+}
+
+
 /**
  * Single-threaded io response benchmark.
  */
@@ -238,8 +285,10 @@ private:
     void* bufV_;
     char* buf_;
     std::queue<IoLog>& rtQ_;
+    std::vector<Histogram>& histograms_;
     PerformanceStatistics& stat_;
     const bool isShowEachResponse_;
+    const bool isShowHistogram_;
     XorShift128 rand_;
     const size_t flushInterval_;
     const size_t ignorePeriod_;
@@ -255,8 +304,10 @@ public:
      */
     IoResponseBench(int threadId, BlockDevice& dev, size_t blockSize,
                     size_t accessRange, std::queue<IoLog>& rtQ,
+                    std::vector<Histogram>& histograms,
                     PerformanceStatistics& stat,
                     bool isShowEachResponse,
+                    bool isShowHistogram,
                     size_t flushInterval, size_t ignorePeriod, size_t readPct,
                     std::mutex& mutex)
         : threadId_(threadId)
@@ -266,8 +317,10 @@ public:
         , bufV_(nullptr)
         , buf_(nullptr)
         , rtQ_(rtQ)
+        , histograms_(histograms)
         , stat_(stat)
         , isShowEachResponse_(isShowEachResponse)
+        , isShowHistogram_(isShowHistogram)
         , rand_(getSeed())
         , flushInterval_(flushInterval)
         , ignorePeriod_(ignorePeriod)
@@ -305,6 +358,7 @@ public:
             end = log.startTime + log.response;
             if (end - bgn > static_cast<double>(ignorePeriod_)) {
                 if (isShowEachResponse_) { rtQ_.push(log); }
+                addToHistogram(log);
                 stat_.updateRt(log.response);
             }
         }
@@ -322,12 +376,18 @@ public:
             IoLog log(isFlush ? execFlushIO() : execBlockIO());
             end = log.startTime + log.response;
             if (end - bgn > static_cast<double>(ignorePeriod_)) {
-                if (isShowEachResponse_) { rtQ_.push(log); }
+                if (isShowEachResponse_) rtQ_.push(log);
+                addToHistogram(log);
                 stat_.updateRt(log.response);
             }
             i++;
         }
         putStat();
+    }
+
+    void addToHistogram(const IoLog& log) {
+        if (!isShowHistogram_) return;
+        ::addToHistogram(histograms_, log);
     }
 
 private:
@@ -400,7 +460,7 @@ private:
 };
 
 void do_work(int threadId, const Options& opt,
-             std::queue<IoLog>& rtQ, PerformanceStatistics& stat,
+             std::queue<IoLog>& rtQ, std::vector<Histogram>& histograms, PerformanceStatistics& stat,
              std::mutex& mutex)
 {
     const bool isDirect = !opt.dontUseOdirect();;
@@ -408,8 +468,9 @@ void do_work(int threadId, const Options& opt,
     BlockDevice bd(opt.getArgs()[0], opt.getMode(), isDirect);
 
     IoResponseBench bench(threadId, bd, opt.getBlockSize(), opt.getAccessRange(),
-                          rtQ, stat, opt.isShowEachResponse(),
-                          opt.getFlushInterval(), opt.getIgnorePeriod(), opt.getReadPct(), mutex);
+                          rtQ, histograms, stat, opt.isShowEachResponse(),
+                          opt.isShowHistogram(), opt.getFlushInterval(),
+                          opt.getIgnorePeriod(), opt.getReadPct(), mutex);
     if (opt.getPeriod() > 0) {
         bench.execNsecs(opt.getPeriod());
     } else {
@@ -417,18 +478,27 @@ void do_work(int threadId, const Options& opt,
     }
 }
 
-void worker_start(std::vector<std::future<void> >& workers, int n, const Options& opt,
+
+void worker_start(std::vector<std::future<void> >& workers, size_t nr, const Options& opt,
                   std::vector<std::queue<IoLog> >& rtQs,
+                  std::vector<std::vector<Histogram> >& histogramss,
                   std::vector<PerformanceStatistics>& stats,
                   std::mutex& mutex)
 {
-    rtQs.resize(n);
-    stats.resize(n);
-    for (int i = 0; i < n; i++) {
-
+    rtQs.resize(nr);
+    if (opt.isShowHistogram()) {
+        histogramss.reserve(nr);
+        for (size_t i = 0; i < nr; i++) {
+            histogramss.push_back(generateHistogram(opt.histogramCfg));
+        }
+    } else {
+        histogramss.resize(nr);
+    }
+    stats.resize(nr);
+    for (size_t i = 0; i < nr; i++) {
         std::future<void> f = std::async(
             std::launch::async, do_work, i, std::ref(opt), std::ref(rtQs[i]),
-            std::ref(stats[i]), std::ref(mutex));
+            std::ref(histogramss[i]), std::ref(stats[i]), std::ref(mutex));
         workers.push_back(std::move(f));
     }
 }
@@ -454,18 +524,31 @@ void execThreadExperiment(const Options& opt)
     assert(nthreads > 0);
 
     std::vector<std::queue<IoLog> > logQs;
+    std::vector<std::vector<Histogram> > hss;
     std::vector<PerformanceStatistics> stats;
 
     std::vector<std::future<void> > workers;
     std::mutex mutex;
 
     const double bgn = getTime();
-    worker_start(workers, nthreads, opt, logQs, stats, mutex);
+    worker_start(workers, nthreads, opt, logQs, hss, stats, mutex);
     worker_join(workers);
     const double end = getTime();
 
     assert(logQs.size() == nthreads);
     std::for_each(logQs.begin(), logQs.end(), pop_and_show_logQ);
+
+    if (opt.isShowHistogram()) {
+        std::vector<Histogram> hsTotal = generateHistogram(opt.histogramCfg);
+        for (const auto& hs : hss) {
+            for (size_t i = 0; i < 3; i++) {
+                hsTotal[i].merge(hs[i]);
+            }
+        }
+        ::printf("HISTOGRAM BEGIN\n");
+        Histogram::joinAndPrint(hsTotal);
+        ::printf("HISTOGRAM END\n");
+    }
 
     PerformanceStatistics stat = mergeStats(stats.begin(), stats.end());
     ::printf("---------------\n"
@@ -490,6 +573,7 @@ private:
     const size_t queueSize_;
     const size_t accessRange_;
     const bool isShowEachResponse_;
+    const bool isShowHistogram_;
     const size_t flushInterval_;
     const size_t ignorePeriod_;
     const Mode mode_;
@@ -497,6 +581,7 @@ private:
     BlockBuffer bb_;
     Rand<size_t, std::uniform_int_distribution<size_t> > rand_;
     std::queue<IoLog> logQ_;
+    std::vector<Histogram> histograms_;
     PerformanceStatistics stat_;
     Aio aio_;
     double bgnTime_;
@@ -504,18 +589,20 @@ private:
 public:
     AioResponseBench(
         const BlockDevice& dev, size_t blockSize, size_t queueSize,
-        size_t accessRange, bool isShowEachResponse,
-        size_t flushInterval, size_t ignorePeriod)
+        size_t accessRange, bool isShowEachResponse, bool isShowHistogram,
+        size_t flushInterval, size_t ignorePeriod, const HistogramConfig& histogramCfg)
         : blockSize_(blockSize)
         , queueSize_(queueSize)
         , accessRange_(calcAccessRange(accessRange, blockSize, dev))
         , isShowEachResponse_(isShowEachResponse)
+        , isShowHistogram_(isShowHistogram)
         , flushInterval_(flushInterval)
         , ignorePeriod_(ignorePeriod)
         , mode_(dev.getMode())
         , bb_(queueSize * 2, blockSize)
         , rand_(0, std::numeric_limits<size_t>::max())
         , logQ_()
+        , histograms_(generateHistogram(histogramCfg))
         , stat_()
         , aio_(dev.getFd(), queueSize)
         , bgnTime_(0) {
@@ -603,6 +690,7 @@ public:
 
     PerformanceStatistics& getStat() { return stat_; }
     std::queue<IoLog>& getIoLogQueue() { return logQ_; }
+    const std::vector<Histogram>& getHistograms() const { return histograms_; }
 
 private:
     bool decideIsWrite() {
@@ -639,9 +727,8 @@ private:
         auto log = toIoLog(ptr);
         if (ptr->endTime  - bgnTime_ > static_cast<double>(ignorePeriod_)) {
             stat_.updateRt(log.response);
-            if (isShowEachResponse_) {
-                logQ_.push(log);
-            }
+            addToHistogram(log);
+            if (isShowEachResponse_) logQ_.push(log);
         }
         return ptr->endTime;
     }
@@ -653,6 +740,10 @@ private:
     IoLog toIoLog(AioData *ptr) {
         return IoLog(0, ptr->type, ptr->oft / ptr->size,
                      ptr->beginTime, ptr->endTime - ptr->beginTime);
+    }
+    void addToHistogram(const IoLog& log) {
+        if (!isShowHistogram_) return;
+        ::addToHistogram(histograms_, log);
     }
 };
 
@@ -668,8 +759,10 @@ void execAioExperiment(const Options& opt)
     AioResponseBench bench(bd, opt.getBlockSize(), opt.getQueueSize(),
                            opt.getAccessRange(),
                            opt.isShowEachResponse(),
+                           opt.isShowHistogram(),
                            opt.getFlushInterval(),
-                           opt.getIgnorePeriod());
+                           opt.getIgnorePeriod(),
+                           opt.histogramCfg);
 
     const double bgn = getTime();
     if (opt.getPeriod() > 0) {
@@ -680,6 +773,13 @@ void execAioExperiment(const Options& opt)
     const double end = getTime();
 
     pop_and_show_logQ(bench.getIoLogQueue());
+
+    if (opt.isShowHistogram()) {
+        ::printf("HISTOGRAM BEGIN\n");
+        Histogram::joinAndPrint(bench.getHistograms());
+        ::printf("HISTOGRAM END\n");
+    }
+
     auto& stat = bench.getStat();
     ::printf("all ");
     stat.print();
