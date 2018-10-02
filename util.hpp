@@ -27,6 +27,9 @@
 #include <linux/fs.h>
 #include <libaio.h>
 
+#include "string_util.hpp"
+
+
 enum IoType
 {
     IOTYPE_READ = 0,
